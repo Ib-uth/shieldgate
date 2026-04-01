@@ -351,9 +351,9 @@ async def check_downstream_health() -> dict[str, Any]:
     try:
         import httpx
 
-        downstream_url = os.getenv(
-            "DOWNSTREAM_URL", "http://localhost:8001"
-        ).rstrip("/")
+        downstream_url = os.getenv("DOWNSTREAM_URL", "http://localhost:8001").rstrip(
+            "/"
+        )
         start_time = time.time()
 
         async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
