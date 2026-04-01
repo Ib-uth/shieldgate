@@ -35,15 +35,23 @@ def temp_dirs():
 
 @pytest.fixture(scope="session")
 def jwt_manager(temp_dirs):
-    """Create JWT manager with test keys"""
+    """Create JWT manager with test keys (reuse CI/workspace keys when present)."""
     keys_dir, _ = temp_dirs
     private_key = Path(keys_dir) / "test_private.pem"
     public_key = Path(keys_dir) / "test_public.pem"
 
-    # Generate test keys
+    env_priv = os.environ.get("JWT_PRIVATE_KEY_PATH")
+    env_pub = os.environ.get("JWT_PUBLIC_KEY_PATH")
+    if env_priv and env_pub:
+        p_priv, p_pub = Path(env_priv), Path(env_pub)
+        if p_priv.is_file() and p_pub.is_file():
+            manager = JWTManager(str(p_priv), str(p_pub))
+            if manager.load_keys():
+                yield manager
+                return
+
     manager = JWTManager(str(private_key), str(public_key))
     manager.generate_key_pair(str(private_key), str(public_key))
-
     yield manager
 
 
@@ -103,8 +111,6 @@ def test_env_vars(temp_dirs, threat_model):
     env_vars = {
         "DATABASE_URL": "sqlite:///./test.db",
         "REDIS_URL": "redis://localhost:6379",
-        "JWT_PRIVATE_KEY_PATH": f"{keys_dir}/test_private.pem",
-        "JWT_PUBLIC_KEY_PATH": f"{keys_dir}/test_public.pem",
         "THREAT_MODEL_PATH": threat_model,
         "DOWNSTREAM_URL": "http://localhost:8001",
         "RATE_LIMIT_IP_REQUESTS": "60",
@@ -115,6 +121,16 @@ def test_env_vars(temp_dirs, threat_model):
         "THREAT_SCORE_BLOCK_THRESHOLD": "0.9",
         "ALLOWED_ORIGINS": "http://localhost:3000",
     }
+    existing_priv = os.environ.get("JWT_PRIVATE_KEY_PATH")
+    existing_pub = os.environ.get("JWT_PUBLIC_KEY_PATH")
+    if not (
+        existing_priv
+        and existing_pub
+        and Path(existing_priv).is_file()
+        and Path(existing_pub).is_file()
+    ):
+        env_vars["JWT_PRIVATE_KEY_PATH"] = f"{keys_dir}/test_private.pem"
+        env_vars["JWT_PUBLIC_KEY_PATH"] = f"{keys_dir}/test_public.pem"
 
     # Set environment variables
     for key, value in env_vars.items():

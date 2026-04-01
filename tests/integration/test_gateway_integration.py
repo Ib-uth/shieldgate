@@ -235,6 +235,8 @@ class TestCORSConfiguration:
             headers={
                 "Origin": "http://localhost:3000",
                 "Access-Control-Request-Method": "GET",
+                # Starlette mirrors requested headers when allow_headers=["*"]
+                "Access-Control-Request-Headers": "authorization,content-type",
             },
         )
 
