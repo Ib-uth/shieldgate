@@ -1,18 +1,16 @@
 """Authentication routes for login, refresh, and logout"""
 
-import os
-import hashlib
 import secrets
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from datetime import timedelta
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, status, Depends, Response, Cookie
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import redis.asyncio as redis
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from ..utils.jwt_utils import JWTManager
 from ..middleware.rbac import require_role
+from ..utils.jwt_utils import JWTManager
 
 
 # Schemas
@@ -28,7 +26,7 @@ class LoginResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: Optional[str] = None
+    refresh_token: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -97,7 +95,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
     async def refresh_access_token(
         request: RefreshRequest,
         response: Response,
-        credentials: Optional[HTTPAuthorizationCredentials] = Depends(refresh_scheme),
+        credentials: HTTPAuthorizationCredentials | None = Depends(refresh_scheme),
     ) -> TokenResponse:
         """
         Refresh access token using refresh token.
@@ -127,7 +125,9 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
             )
 
         # Check if refresh token is revoked
-        is_revoked = await redis_client.sismember("refresh_token:revoked", refresh_jti)
+        is_revoked = await redis_client.sismember(  # type: ignore[misc]
+            "refresh_token:revoked", refresh_jti
+        )
         if is_revoked:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -150,8 +150,8 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         new_refresh_jti = f"refresh_{new_refresh_token}"
 
         # Revoke old refresh token
-        await redis_client.sadd("refresh_token:revoked", refresh_jti)
-        await redis_client.delete(f"refresh_token:{refresh_token}")
+        await redis_client.sadd("refresh_token:revoked", refresh_jti)  # type: ignore[misc]
+        await redis_client.delete(f"refresh_token:{refresh_token}")  # type: ignore[misc]
 
         # Store new refresh token
         await redis_client.setex(
@@ -175,8 +175,8 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
     @router.post("/logout")
     async def logout(
         response: Response,
-        credentials: Optional[HTTPAuthorizationCredentials] = Depends(refresh_scheme),
-    ) -> Dict[str, Any]:
+        credentials: HTTPAuthorizationCredentials | None = Depends(refresh_scheme),
+    ) -> dict[str, Any]:
         """
         Logout user by revoking refresh token.
         """
@@ -199,8 +199,8 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         if refresh_token:
             # Revoke the refresh token
             refresh_jti = f"refresh_{refresh_token}"
-            await redis_client.sadd("refresh_token:revoked", refresh_jti)
-            await redis_client.delete(f"refresh_token:{refresh_token}")
+            await redis_client.sadd("refresh_token:revoked", refresh_jti)  # type: ignore[misc]
+            await redis_client.delete(f"refresh_token:{refresh_token}")  # type: ignore[misc]
 
         # Clear refresh token cookie
         response.delete_cookie("refresh_token")
@@ -211,7 +211,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
     @require_role("readonly")
     async def get_current_user(
         credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get current user information from access token.
         """

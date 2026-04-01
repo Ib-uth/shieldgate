@@ -2,12 +2,17 @@
 
 import os
 import time
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import JWTError, jwt
+from cryptography.hazmat.primitives.asymmetric.types import (
+    PrivateKeyTypes,
+    PublicKeyTypes,
+)
+from jose import JWTError, jwt  # type: ignore[import-untyped]
 
 from ..models.schemas import UserClaims
 
@@ -18,8 +23,8 @@ class JWTManager:
     def __init__(self, private_key_path: str, public_key_path: str):
         self.private_key_path = private_key_path
         self.public_key_path = public_key_path
-        self._private_key = None
-        self._public_key = None
+        self._private_key: PrivateKeyTypes | None = None
+        self._public_key: PublicKeyTypes | None = None
         self.algorithm = "RS256"
 
     def _load_keys(self) -> None:
@@ -39,6 +44,14 @@ class JWTManager:
                 f.read(), backend=default_backend()
             )
 
+    def load_keys(self) -> bool:
+        """Load keys from configured paths. Returns False if files are missing."""
+        try:
+            self._load_keys()
+        except FileNotFoundError:
+            return False
+        return True
+
     @property
     def private_key(self):
         if self._private_key is None:
@@ -51,7 +64,7 @@ class JWTManager:
             self._load_keys()
         return self._public_key
 
-    def create_token(self, user_claims: Dict[str, Any], expires_in: int = 3600) -> str:
+    def create_token(self, user_claims: dict[str, Any], expires_in: int = 3600) -> str:
         """Create a JWT token with user claims"""
         now = int(time.time())
         expires_at = now + expires_in
@@ -61,7 +74,7 @@ class JWTManager:
 
         return jwt.encode(payload, self.private_key, algorithm=self.algorithm)
 
-    def verify_token(self, token: str) -> Optional[UserClaims]:
+    def verify_token(self, token: str) -> UserClaims | None:
         """Verify and decode a JWT token"""
         try:
             payload = jwt.decode(token, self.public_key, algorithms=[self.algorithm])
@@ -77,7 +90,7 @@ class JWTManager:
             exp = payload.get("exp")
             if exp is None:
                 return True
-            return exp < int(time.time())
+            return int(time.time()) >= exp
         except JWTError:
             return True
 
@@ -105,9 +118,9 @@ class JWTManager:
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
 
-        # Write keys to files
-        os.makedirs(os.path.dirname(private_key_path), exist_ok=True)
-        os.makedirs(os.path.dirname(public_key_path), exist_ok=True)
+        # Write keys to files (dirname may be empty for paths like "key.pem")
+        Path(private_key_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(public_key_path).parent.mkdir(parents=True, exist_ok=True)
 
         with open(private_key_path, "wb") as f:
             f.write(private_pem)
@@ -120,7 +133,7 @@ class JWTManager:
         print(f"  Public key: {public_key_path}")
 
 
-def create_sample_tokens(jwt_manager: JWTManager) -> Dict[str, str]:
+def create_sample_tokens(jwt_manager: JWTManager) -> dict[str, str]:
     """Create sample tokens for testing different roles"""
     tokens = {}
 

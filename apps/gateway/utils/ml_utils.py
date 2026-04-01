@@ -16,7 +16,7 @@ from ..models.schemas import ThreatFeatures
 class ThreatDetectionModel:
     """ML-based threat detection using Isolation Forest"""
 
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str | None = None):
         self.model_path = model_path
         self.model = None
         self.scaler = None
@@ -101,7 +101,7 @@ class ThreatDetectionModel:
             return 0.0
 
         # Count character frequencies
-        char_counts = {}
+        char_counts: dict[str, int] = {}
         for char in text:
             char_counts[char] = char_counts.get(char, 0) + 1
 
@@ -214,12 +214,12 @@ def generate_synthetic_training_data(n_samples: int = 10000) -> list[dict[str, A
 
         data.append(
             {
-                "ip_request_count": max(1, ip_request_count),
-                "user_agent_entropy": max(0, user_agent_entropy),
-                "hour_of_day": hour_of_day,
-                "endpoint_category": endpoint_category,
-                "request_size": max(0, request_size),
-                "header_count": max(1, header_count),
+                "ip_request_count": int(max(1, ip_request_count)),
+                "user_agent_entropy": float(max(0, user_agent_entropy)),
+                "hour_of_day": int(hour_of_day),
+                "endpoint_category": str(endpoint_category),
+                "request_size": float(max(0, request_size)),
+                "header_count": int(max(1, header_count)),
             }
         )
 
@@ -238,26 +238,26 @@ def train_threat_detection_model(
     # Convert training data to feature arrays
     endpoint_categories = model.endpoint_categories
 
-    X = []
+    feature_rows: list[list[float]] = []
     for data_point in training_data:
         endpoint_numeric = endpoint_categories.get(
             data_point["endpoint_category"], endpoint_categories["unknown"]
         )
 
         features = [
-            data_point["ip_request_count"],
-            data_point["user_agent_entropy"],
-            data_point["hour_of_day"],
-            endpoint_numeric,
-            data_point["request_size"],
-            data_point["header_count"],
+            float(data_point["ip_request_count"]),
+            float(data_point["user_agent_entropy"]),
+            float(data_point["hour_of_day"]),
+            float(endpoint_numeric),
+            float(data_point["request_size"]),
+            float(data_point["header_count"]),
         ]
-        X.append(features)
+        feature_rows.append(features)
 
-    X = np.array(X)
+    X_arr = np.array(feature_rows)
 
     # Split data for training
-    X_train, X_test = train_test_split(X, test_size=0.2, random_state=42)
+    X_train, X_test = train_test_split(X_arr, test_size=0.2, random_state=42)
 
     # Scale features
     scaler = StandardScaler()

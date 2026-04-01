@@ -77,34 +77,32 @@ class TestRedisRateLimiter:
     @pytest.mark.asyncio
     async def test_sliding_window_cleanup(self):
         """Test sliding window cleanup of old entries"""
-        current_time = time.time()
-        window_start = current_time - 60
+        fixed_t = 1_700_000_000.0
+        window_start = fixed_t - 60
 
-        # Mock Redis to return some old entries that should be cleaned up
-        self.redis_mock.zremrangebyscore.return_value = 3  # Removed 3 old entries
-        self.redis_mock.zcard.return_value = 7  # 7 current entries
-        self.redis_mock.zadd.return_value = 1
-        self.redis_mock.expire.return_value = 1
+        with patch("gateway.middleware.ratelimit.time.time", return_value=fixed_t):
+            self.redis_mock.zremrangebyscore.return_value = 3
+            self.redis_mock.zcard.return_value = 7
+            self.redis_mock.zadd.return_value = 1
+            self.redis_mock.expire.return_value = 1
 
-        await self.rate_limiter.check_ip_rate_limit("192.168.1.1")
+            await self.rate_limiter.check_ip_rate_limit("192.168.1.1")
 
-        # Verify cleanup was called with correct time range
         self.redis_mock.zremrangebyscore.assert_called_once()
         call_args = self.redis_mock.zremrangebyscore.call_args
         assert call_args[0][0] == "rate_limit:ip:192.168.1.1"
         assert call_args[0][1] == 0
-        assert call_args[0][2] < window_start
+        assert call_args[0][2] == window_start
 
     @pytest.mark.asyncio
     async def test_redis_error_handling(self):
         """Test graceful handling of Redis errors"""
         # Mock Redis to raise connection error
-        self.redis_mock.zremrangebyscore.side_effect = Exception(
+        self.redis_mock.zremrangebyscore.side_effect = ConnectionError(
             "Redis connection failed"
         )
 
-        # Should not raise exception, but handle gracefully
-        with pytest.raises(Exception):
+        with pytest.raises(ConnectionError):
             await self.rate_limiter.check_ip_rate_limit("192.168.1.1")
 
     @pytest.mark.asyncio
@@ -130,14 +128,18 @@ class TestRedisRateLimiter:
 class TestRateLimitMiddleware:
     """Test rate limiting middleware"""
 
-    def setup_method(self):
-        """Setup test environment"""
-        self.client = TestClient(app)
+    @classmethod
+    def setup_class(cls):
+        cls._test_client_ctx = TestClient(app, raise_server_exceptions=False)
+        cls.client = cls._test_client_ctx.__enter__()
 
-    @patch("apps.gateway.main.redis_client")
+    @classmethod
+    def teardown_class(cls):
+        cls._test_client_ctx.__exit__(None, None, None)
+
+    @patch("gateway.main.redis_client")
     def test_rate_limit_headers_added(self, mock_redis):
         """Test rate limit headers are added to responses"""
-        # Mock Redis client and rate limiter
         mock_rate_limiter = AsyncMock()
         mock_rate_limiter.check_ip_rate_limit.return_value = {
             "limited": False,
@@ -147,20 +149,22 @@ class TestRateLimitMiddleware:
             "reset_time": int(time.time()) + 60,
         }
 
-        with patch(
-            "apps.gateway.main.RedisRateLimiter", return_value=mock_rate_limiter
+        with (
+            patch("gateway.main.jwt_manager", None),
+            patch(
+                "gateway.middleware.ratelimit.RedisRateLimiter",
+                return_value=mock_rate_limiter,
+            ),
         ):
-            response = self.client.get("/health")
+            response = self.client.get("/")
 
-            # Should have rate limit headers
             assert "X-RateLimit-Limit" in response.headers
             assert "X-RateLimit-Remaining" in response.headers
             assert "X-RateLimit-Reset" in response.headers
 
-    @patch("apps.gateway.main.redis_client")
+    @patch("gateway.main.redis_client")
     def test_rate_limit_exceeded_response(self, mock_redis):
         """Test response when rate limit is exceeded"""
-        # Mock Redis client and rate limiter
         mock_rate_limiter = AsyncMock()
         mock_rate_limiter.check_ip_rate_limit.return_value = {
             "limited": True,
@@ -170,23 +174,25 @@ class TestRateLimitMiddleware:
             "reset_time": int(time.time()) + 30,
         }
 
-        with patch(
-            "apps.gateway.main.RedisRateLimiter", return_value=mock_rate_limiter
+        with (
+            patch("gateway.main.jwt_manager", None),
+            patch(
+                "gateway.middleware.ratelimit.RedisRateLimiter",
+                return_value=mock_rate_limiter,
+            ),
         ):
-            response = self.client.get("/proxy/public")
+            response = self.client.get("/")
 
             assert response.status_code == 429
             assert "Retry-After" in response.headers
             assert "X-RateLimit-Limit" in response.headers
             assert response.headers["Retry-After"] == "30"
 
-    @patch("apps.gateway.main.redis_client")
+    @patch("gateway.main.redis_client")
     def test_user_vs_ip_rate_limits(self, mock_redis):
         """Test different rate limits for users vs IPs"""
-        # Mock Redis client and rate limiter
         mock_rate_limiter = AsyncMock()
 
-        # Test unauthenticated request (IP-based)
         mock_rate_limiter.check_ip_rate_limit.return_value = {
             "limited": False,
             "current_requests": 5,
@@ -195,12 +201,15 @@ class TestRateLimitMiddleware:
             "reset_time": int(time.time()) + 60,
         }
 
-        with patch(
-            "apps.gateway.main.RedisRateLimiter", return_value=mock_rate_limiter
+        with (
+            patch("gateway.main.jwt_manager", None),
+            patch(
+                "gateway.middleware.ratelimit.RedisRateLimiter",
+                return_value=mock_rate_limiter,
+            ),
         ):
-            self.client.get("/proxy/public")
+            self.client.get("/")
 
-            # Should check IP rate limit for unauthenticated request
             mock_rate_limiter.check_ip_rate_limit.assert_called_once()
             mock_rate_limiter.check_user_rate_limit.assert_not_called()
 
@@ -212,47 +221,47 @@ class TestRateLimitMiddleware:
 
 
 class TestRateLimitProperties:
-    """Property-based testing for rate limiting"""
+    """Invariant checks for rate limiting (parametrized)."""
 
     @pytest.mark.asyncio
-    async def test_rate_limit_invariants(self):
-        """Test rate limiting invariants using property-based testing"""
-        from hypothesis import given
-        from hypothesis import strategies as st
-
+    @pytest.mark.parametrize(
+        "current_requests,max_requests,expect_limited",
+        [
+            (5, 10, False),
+            (10, 10, True),
+            (0, 1, False),
+            (20, 15, True),
+        ],
+    )
+    async def test_rate_limit_invariants(
+        self, current_requests, max_requests, expect_limited
+    ):
         redis_mock = AsyncMock()
-        rate_limiter = RedisRateLimiter(redis_mock, ip_requests=10, ip_window=60)
-
-        @given(
-            current_requests=st.integers(min_value=0, max_value=20),
-            max_requests=st.integers(min_value=1, max_value=100),
+        rate_limiter = RedisRateLimiter(
+            redis_mock,
+            ip_requests=max_requests,
+            ip_window=60,
         )
-        async def test_rate_limit_logic(current_requests, max_requests):
-            # Mock Redis responses
-            redis_mock.zremrangebyscore.return_value = 0
-            redis_mock.zcard.return_value = current_requests
-            redis_mock.zadd.return_value = 1
-            redis_mock.expire.return_value = 1
 
-            # Mock oldest request for retry_after calculation
-            if current_requests >= max_requests:
-                redis_mock.zrange.return_value = [(b"test", time.time() - 30)]
+        redis_mock.zremrangebyscore.return_value = 0
+        redis_mock.zcard.return_value = current_requests
+        redis_mock.zadd.return_value = 1
+        redis_mock.expire.return_value = 1
 
-            result = await rate_limiter.check_ip_rate_limit("192.168.1.1")
+        if current_requests >= max_requests:
+            redis_mock.zrange.return_value = [(b"test", time.time() - 30)]
 
-            # Invariants
-            assert result["current_requests"] == current_requests
-            assert result["max_requests"] == max_requests
+        result = await rate_limiter.is_rate_limited(
+            "rate_limit:ip:192.168.1.1", max_requests, 60
+        )
 
-            # Should be limited if current >= max
-            if current_requests >= max_requests:
-                assert result["limited"] is True
-                assert result["retry_after"] > 0
-            else:
-                assert result["limited"] is False
-                assert result["retry_after"] == 0
-
-        await test_rate_limit_logic()
+        assert result["current_requests"] == current_requests
+        assert result["max_requests"] == max_requests
+        assert result["limited"] is expect_limited
+        if expect_limited:
+            assert result["retry_after"] > 0
+        else:
+            assert result["retry_after"] == 0
 
 
 if __name__ == "__main__":

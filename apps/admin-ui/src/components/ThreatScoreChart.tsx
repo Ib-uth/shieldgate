@@ -1,5 +1,22 @@
 import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+type TooltipContentProps = {
+  active?: boolean;
+  payload?: ReadonlyArray<{
+    payload?: { level: string };
+    value?: number;
+  }>;
+};
 
 interface ThreatScoreChartProps {
   threatDistribution: Record<string, number>;
@@ -29,12 +46,12 @@ export const ThreatScoreChart: React.FC<ThreatScoreChartProps> = ({ threatDistri
     fill: getBarColor(level),
   }));
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
+  const CustomTooltip = ({ active, payload }: TooltipContentProps) => {
+    if (active && payload?.length) {
       const data = payload[0];
       return (
         <div className="bg-white p-3 border border-gray-200 rounded shadow-lg">
-          <p className="font-medium text-gray-900">{data.payload.level}</p>
+          <p className="font-medium text-gray-900">{data.payload?.level}</p>
           <p className="text-sm text-gray-600">Count: {data.value}</p>
         </div>
       );
@@ -67,11 +84,11 @@ export const ThreatScoreChart: React.FC<ThreatScoreChartProps> = ({ threatDistri
               axisLine={{ stroke: '#e5e7eb' }}
             />
             <Tooltip content={<CustomTooltip />} />
-            <Bar 
-              dataKey="count" 
-              fill={(entry: any) => entry.fill}
-              radius={[4, 4, 0, 0]}
-            />
+            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+              {chartData.map((entry) => (
+                <Cell key={entry.level} fill={entry.fill} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       )}

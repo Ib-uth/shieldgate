@@ -39,10 +39,6 @@ export const RequestLogTable: React.FC = () => {
     return new Date(timestamp).toLocaleString();
   };
 
-  const truncateUserAgent = (userAgent: string) => {
-    return userAgent.length > 50 ? userAgent.substring(0, 50) + '...' : userAgent;
-  };
-
   if (isLoading) {
     return (
       <div className="card">
@@ -171,7 +167,7 @@ export const RequestLogTable: React.FC = () => {
         </div>
       )}
 
-      {requests && requests.length > 0 ? (
+      {requests && requests.length > 0 && (
         <div className="mt-4 text-sm text-gray-500">
           Showing {requests.length} most recent requests
         </div>

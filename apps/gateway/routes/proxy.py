@@ -76,26 +76,26 @@ class RequestProxy:
                 media_type=response.headers.get("content-type"),
             )
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
                 detail="Downstream service timeout",
-            )
-        except httpx.ConnectError:
+            ) from e
+        except httpx.ConnectError as e:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Cannot connect to downstream service",
-            )
+            ) from e
         except httpx.HTTPError as e:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Downstream service error: {str(e)}",
-            )
+            ) from e
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Proxy error: {str(e)}",
-            )
+            ) from e
 
     def prepare_headers(self, request: Request, request_id: str) -> dict[str, str]:
         """Prepare headers for downstream request"""

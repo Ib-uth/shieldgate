@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from fastapi import HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -10,46 +11,81 @@ from ..models.schemas import UserClaims
 from ..utils.jwt_utils import JWTManager
 
 
+def _jwt_auth_json_response(
+    request: Request, status_code: int, detail: str, *, www_authenticate: bool
+) -> JSONResponse:
+    """Return 401-style JSON without raising through BaseHTTPMiddleware (avoids ExceptionGroup in TestClient)."""
+    headers = {"WWW-Authenticate": "Bearer"} if www_authenticate else None
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "type": "http_error",
+                "status_code": status_code,
+                "detail": detail,
+                "request_id": getattr(request.state, "request_id", "unknown"),
+            }
+        },
+        headers=headers,
+    )
+
+
 class JWTMiddleware(BaseHTTPMiddleware):
     """Middleware to handle JWT authentication"""
 
-    def __init__(self, app, jwt_manager: JWTManager, public_paths: list | None = None):
+    def __init__(
+        self,
+        app,
+        get_jwt_manager: Callable[[], JWTManager | None],
+        public_paths: list | None = None,
+    ):
         super().__init__(app)
-        self.jwt_manager = jwt_manager
+        self._get_jwt_manager = get_jwt_manager
         self.public_paths = public_paths or ["/health", "/metrics"]
         self.security = HTTPBearer(auto_error=False)
 
     async def dispatch(self, request: Request, call_next: Callable):
-        # Skip auth for public paths
-        if request.url.path in self.public_paths:
+        path = request.url.path
+        if path in self.public_paths:
+            return await call_next(request)
+        if path.startswith("/health/") or path.startswith("/metrics/"):
+            return await call_next(request)
+        if path == "/auth" or path.startswith("/auth/"):
+            return await call_next(request)
+
+        jwt_manager = self._get_jwt_manager()
+        if jwt_manager is None:
             return await call_next(request)
 
         # Extract token from Authorization header
         credentials: HTTPAuthorizationCredentials | None = await self.security(request)
 
         if credentials is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
+            return _jwt_auth_json_response(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "Missing authorization header",
+                www_authenticate=True,
             )
 
         # Verify token
-        user_claims = self.jwt_manager.verify_token(credentials.credentials)
+        user_claims = jwt_manager.verify_token(credentials.credentials)
 
         if user_claims is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-                headers={"WWW-Authenticate": "Bearer"},
+            return _jwt_auth_json_response(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "Invalid or expired token",
+                www_authenticate=True,
             )
 
         # Check if token is expired
-        if self.jwt_manager.is_token_expired(credentials.credentials):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token expired",
-                headers={"WWW-Authenticate": "Bearer"},
+        if jwt_manager.is_token_expired(credentials.credentials):
+            return _jwt_auth_json_response(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "Token expired",
+                www_authenticate=True,
             )
 
         # Add user claims to request state

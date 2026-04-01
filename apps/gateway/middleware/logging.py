@@ -192,6 +192,8 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
 
     async def store_log_entry(self, log_entry: dict[str, Any]):
         """Store log entry in database"""
+        if SessionLocal is None:
+            return
         try:
             db = SessionLocal()
             try:

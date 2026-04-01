@@ -4,11 +4,11 @@ import os
 from datetime import datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, status
-from sqlalchemy import desc, func
+from fastapi import APIRouter, Body, HTTPException, Request, status
+from sqlalchemy import Integer, cast, desc, func
 
 from ..middleware.rbac import require_admin
-from ..models.database import BlockedIP, RequestLog, SessionLocal
+from ..models.database import BlockedIP, RequestLog, get_db_session
 from ..utils.jwt_utils import JWTManager
 
 
@@ -18,10 +18,10 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
 
     @router.get("/stats")
     @require_admin
-    async def get_admin_stats():
+    async def get_admin_stats(request: Request):
         """Get comprehensive admin statistics"""
         try:
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 # Time ranges for different statistics
                 now = datetime.utcnow()
@@ -104,7 +104,7 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
                         RequestLog.ip,
                         func.avg(RequestLog.threat_score).label("avg_threat_score"),
                         func.count(RequestLog.id).label("request_count"),
-                        func.sum(func.cast(RequestLog.blocked, int)).label(
+                        func.sum(cast(RequestLog.blocked, Integer)).label(
                             "blocked_count"
                         ),
                     )
@@ -158,11 +158,11 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to retrieve admin statistics: {str(e)}",
-            )
+            ) from e
 
     @router.post("/block-ip")
     @require_admin
-    async def block_ip_address(ip_data: dict[str, Any] = Body(...)):
+    async def block_ip_address(request: Request, ip_data: dict[str, Any] = Body(...)):
         """Block an IP address"""
         try:
             ip = ip_data.get("ip")
@@ -175,7 +175,7 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
                     detail="IP address is required",
                 )
 
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 # Check if IP is already blocked
                 existing_block = (
@@ -218,14 +218,14 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to block IP: {str(e)}",
-            )
+            ) from e
 
     @router.post("/unblock-ip/{ip}")
     @require_admin
-    async def unblock_ip_address(ip: str):
+    async def unblock_ip_address(request: Request, ip: str):
         """Unblock an IP address"""
         try:
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 # Find the blocked IP
                 blocked_ip = (
@@ -262,14 +262,16 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to unblock IP: {str(e)}",
-            )
+            ) from e
 
     @router.get("/blocked-ips")
     @require_admin
-    async def get_blocked_ips(limit: int = 100, active_only: bool = True):
+    async def get_blocked_ips(
+        request: Request, limit: int = 100, active_only: bool = True
+    ):
         """Get list of blocked IPs"""
         try:
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 query = db.query(BlockedIP)
 
@@ -301,14 +303,14 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to retrieve blocked IPs: {str(e)}",
-            )
+            ) from e
 
     @router.get("/threat-scores")
     @require_admin
-    async def get_threat_score_distribution(hours: int = 24):
+    async def get_threat_score_distribution(request: Request, hours: int = 24):
         """Get detailed threat score distribution"""
         try:
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 start_time = datetime.utcnow() - timedelta(hours=hours)
 
@@ -383,11 +385,13 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to retrieve threat scores: {str(e)}",
-            )
+            ) from e
 
     @router.post("/generate-test-token")
     @require_admin
-    async def generate_test_token(token_data: dict[str, Any] = Body(...)):
+    async def generate_test_token(
+        request: Request, token_data: dict[str, Any] = Body(...)
+    ):
         """Generate a test JWT token"""
         try:
             # Get JWT paths from environment
@@ -420,6 +424,6 @@ def create_admin_routes(rbac_middleware, database_engine) -> APIRouter:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to generate token: {str(e)}",
-            )
+            ) from e
 
     return router

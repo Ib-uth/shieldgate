@@ -9,7 +9,7 @@ import { BlockedIPsList } from './BlockedIPsList';
 export const Dashboard: React.FC = () => {
   const { data: healthData, isLoading: healthLoading } = useHealthStatus();
   const { data: metricsData, isLoading: metricsLoading } = useMetrics();
-  const { data: adminStats, isLoading: adminStatsLoading } = useAdminStats();
+  const { isLoading: adminStatsLoading } = useAdminStats();
 
   if (healthLoading || metricsLoading || adminStatsLoading) {
     return (

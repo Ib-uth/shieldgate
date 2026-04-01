@@ -1,7 +1,8 @@
 """Pydantic schemas for API requests and responses"""
 
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -14,7 +15,7 @@ class RequestLog(BaseModel):
     path: str
     status_code: int
     latency_ms: float
-    user_id: Optional[str] = None
+    user_id: str | None = None
     ip: str
     user_agent: str
     threat_score: float = 0.0
@@ -27,7 +28,7 @@ class HealthResponse(BaseModel):
     status: str = "healthy"
     timestamp: datetime
     version: str = "0.1.0"
-    services: Dict[str, Any]
+    services: dict[str, Any]
 
 
 class MetricsResponse(BaseModel):
@@ -37,9 +38,9 @@ class MetricsResponse(BaseModel):
     period_hours: int = 1
     total_requests: int
     error_rate: float
-    top_blocked_ips: List[Dict[str, Any]]
-    threat_score_distribution: Dict[str, Any]
-    top_endpoints: List[Dict[str, Any]]
+    top_blocked_ips: list[dict[str, Any]]
+    threat_score_distribution: dict[str, Any]
+    top_endpoints: list[dict[str, Any]]
 
 
 class TokenResponse(BaseModel):
@@ -65,9 +66,9 @@ class ProxyRequest(BaseModel):
 
     method: str
     path: str
-    headers: Dict[str, Any]
-    body: Optional[bytes] = None
-    query_params: Optional[Dict[str, Any]] = None
+    headers: dict[str, Any]
+    body: bytes | None = None
+    query_params: dict[str, Any] | None = None
 
 
 class ThreatFeatures(BaseModel):

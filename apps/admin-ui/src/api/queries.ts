@@ -1,6 +1,13 @@
 import { useQuery } from 'react-query';
 import apiClient from './client';
-import { HealthStatus, MetricsData, RequestLog, AdminStats, ThreatScoreDistribution } from '../types/api';
+import {
+  AdminStats,
+  BlockedIPDetails,
+  HealthStatus,
+  MetricsData,
+  RequestLog,
+  ThreatScoreDistribution,
+} from '../types/api';
 
 export const useHealthStatus = () => {
   return useQuery<HealthStatus>(
@@ -46,7 +53,7 @@ export const useRecentRequests = (limit: number = 50, blockedOnly: boolean = fal
 };
 
 export const useBlockedIPs = (limit: number = 100) => {
-  return useQuery(
+  return useQuery<BlockedIPDetails[]>(
     ['blocked-ips', limit],
     async () => {
       const response = await apiClient.get(`/metrics/blocked-ips?limit=${limit}`);

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useBlockedIPs } from '../api/queries';
 import apiClient from '../api/client';
+import type { BlockedIPDetails } from '../types/api';
 
 export const BlockedIPsList: React.FC = () => {
   const { data: blockedIPs, isLoading, error, refetch } = useBlockedIPs(20);
@@ -62,7 +63,7 @@ export const BlockedIPsList: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-3">
-          {blockedIPs?.map((blockedIP) => (
+          {blockedIPs?.map((blockedIP: BlockedIPDetails) => (
             <div
               key={blockedIP.ip}
               className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"

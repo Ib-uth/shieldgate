@@ -1,10 +1,10 @@
 """SQLAlchemy database models"""
 
 import os
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
-    Column,
     DateTime,
     Float,
     Index,
@@ -13,21 +13,28 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.sql import func
 
-# Create database engine from environment variable
 DATABASE_URL = os.environ.get("DATABASE_URL")
-if DATABASE_URL:
-    engine = create_engine(DATABASE_URL)
-else:
-    engine = None
+engine: Engine | None = create_engine(DATABASE_URL) if DATABASE_URL else None
 
 # Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
+SessionLocal: sessionmaker[Session] | None = (
+    sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
+)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
+
+
+def get_db_session() -> Session:
+    """Return a new DB session or raise if DATABASE_URL is not configured."""
+    if SessionLocal is None:
+        raise RuntimeError("DATABASE_URL is not configured")
+    return SessionLocal()
 
 
 class RequestLog(Base):
@@ -35,24 +42,23 @@ class RequestLog(Base):
 
     __tablename__ = "request_logs"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    request_id = Column(String(36), unique=True, nullable=False, index=True)
-    timestamp = Column(
-        DateTime(timezone=True), nullable=False, default=func.now(), index=True
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
-    method = Column(String(10), nullable=False)
-    path = Column(String(500), nullable=False)
-    status_code = Column(Integer, nullable=False)
-    latency_ms = Column(Float, nullable=False)
-    user_id = Column(String(100), nullable=True, index=True)
-    ip = Column(String(45), nullable=False, index=True)  # IPv6 compatible
-    user_agent = Column(Text, nullable=True)
-    threat_score = Column(Float, nullable=False, default=0.0, index=True)
-    blocked = Column(Boolean, nullable=False, default=False)
-    headers = Column(Text, nullable=True)  # JSON string
-    response_size = Column(Integer, nullable=True)
+    method: Mapped[str] = mapped_column(String(10))
+    path: Mapped[str] = mapped_column(String(500))
+    status_code: Mapped[int] = mapped_column(Integer)
+    latency_ms: Mapped[float] = mapped_column(Float)
+    user_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    ip: Mapped[str] = mapped_column(String(45), index=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    threat_score: Mapped[float] = mapped_column(Float, index=True, default=0.0)
+    blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    headers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Indexes for common queries
     __table_args__ = (
         Index("idx_timestamp_ip", "timestamp", "ip"),
         Index("idx_timestamp_user", "timestamp", "user_id"),
@@ -66,13 +72,17 @@ class BlockedIP(Base):
 
     __tablename__ = "blocked_ips"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ip = Column(String(45), unique=True, nullable=False, index=True)
-    blocked_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
-    reason = Column(String(200), nullable=True)
-    threat_score = Column(Float, nullable=True)
-    unblocked_at = Column(DateTime(timezone=True), nullable=True)
-    unblocked_by = Column(String(100), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ip: Mapped[str] = mapped_column(String(45), unique=True)
+    blocked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    threat_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unblocked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    unblocked_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class Metrics(Base):
@@ -80,17 +90,16 @@ class Metrics(Base):
 
     __tablename__ = "metrics"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(
-        DateTime(timezone=True), nullable=False, default=func.now(), index=True
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
-    period_minutes = Column(Integer, nullable=False, default=5)
-    total_requests = Column(Integer, nullable=False, default=0)
-    error_requests = Column(Integer, nullable=False, default=0)
-    blocked_requests = Column(Integer, nullable=False, default=0)
-    unique_ips = Column(Integer, nullable=False, default=0)
-    avg_latency_ms = Column(Float, nullable=False, default=0.0)
-    avg_threat_score = Column(Float, nullable=False, default=0.0)
+    period_minutes: Mapped[int] = mapped_column(Integer, default=5)
+    total_requests: Mapped[int] = mapped_column(Integer, default=0)
+    error_requests: Mapped[int] = mapped_column(Integer, default=0)
+    blocked_requests: Mapped[int] = mapped_column(Integer, default=0)
+    unique_ips: Mapped[int] = mapped_column(Integer, default=0)
+    avg_latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_threat_score: Mapped[float] = mapped_column(Float, default=0.0)
 
-    # Index for time-series queries
     __table_args__ = (Index("idx_timestamp_period", "timestamp", "period_minutes"),)

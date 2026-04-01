@@ -75,6 +75,8 @@ def require_role(required_role: str):
                 if isinstance(arg, Request):
                     request = arg
                     break
+            if request is None:
+                request = kwargs.get("request")
 
             if request is None:
                 raise HTTPException(
@@ -117,6 +119,8 @@ def require_permission(permission: str):
                 if isinstance(arg, Request):
                     request = arg
                     break
+            if request is None:
+                request = kwargs.get("request")
 
             if request is None:
                 raise HTTPException(

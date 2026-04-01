@@ -34,7 +34,11 @@ export const HealthCard: React.FC<HealthCardProps> = ({ health }) => {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">System Health</h2>
+        <h2
+          className={`text-lg font-semibold ${getOverallStatusColor(health.status)}`}
+        >
+          System Health
+        </h2>
         <span className={`px-3 py-1 rounded-full text-sm font-medium ${getServiceStatusColor(health.status)}`}>
           {health.status.toUpperCase()}
         </span>

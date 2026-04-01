@@ -6,10 +6,12 @@ import sys
 import argparse
 from pathlib import Path
 
-# Add the apps directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'apps', 'gateway'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "apps"))
 
-from utils.ml_utils import generate_synthetic_training_data, train_threat_detection_model
+from gateway.utils.ml_utils import (
+    generate_synthetic_training_data,
+    train_threat_detection_model,
+)
 
 
 def main():

@@ -6,10 +6,10 @@ import sys
 import argparse
 from pathlib import Path
 
-# Add the apps directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'apps', 'gateway'))
+# Add apps/ so package `gateway` resolves (gateway uses package-relative imports)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "apps"))
 
-from utils.jwt_utils import JWTManager
+from gateway.utils.jwt_utils import JWTManager
 
 
 def main():
@@ -74,7 +74,7 @@ def main():
     
     # Generate sample tokens for testing
     print("\nGenerating sample tokens...")
-    from utils.jwt_utils import create_sample_tokens
+    from gateway.utils.jwt_utils import create_sample_tokens
     
     sample_tokens = create_sample_tokens(jwt_manager)
     

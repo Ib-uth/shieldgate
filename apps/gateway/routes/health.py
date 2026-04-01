@@ -8,12 +8,12 @@ import redis.asyncio as redis
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, text
 
-from ..models.database import BlockedIP, RequestLog, SessionLocal
+from ..models.database import BlockedIP, RequestLog, get_db_session
 from ..models.schemas import HealthResponse, MetricsResponse
 
 
-def create_health_routes(redis_client: redis.Redis, database_engine) -> tuple:
-    """Create health and metrics routes"""
+def create_health_routes(redis_client: redis.Redis, database_engine) -> APIRouter:
+    """Create health check routes"""
     router = APIRouter()
 
     @router.get("/", response_model=HealthResponse)
@@ -54,7 +54,7 @@ def create_health_routes(redis_client: redis.Redis, database_engine) -> tuple:
         """Detailed health check with additional metrics"""
         return await health_check()
 
-    return router, router
+    return router
 
 
 def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRouter:
@@ -70,7 +70,7 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
             start_time = end_time - timedelta(hours=hours)
 
             # Get metrics from database
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 # Total requests
                 total_requests = (
@@ -178,7 +178,7 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to retrieve metrics: {str(e)}",
-            )
+            ) from e
 
     @router.get("/requests")
     async def get_recent_requests(
@@ -186,7 +186,7 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
     ):
         """Get recent request logs"""
         try:
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 query = db.query(RequestLog)
 
@@ -224,13 +224,13 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to retrieve requests: {str(e)}",
-            )
+            ) from e
 
     @router.get("/blocked-ips")
     async def get_blocked_ips(limit: int = 100):
         """Get list of blocked IPs"""
         try:
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 blocked_ips = (
                     db.query(BlockedIP)
@@ -257,13 +257,13 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to retrieve blocked IPs: {str(e)}",
-            )
+            ) from e
 
     @router.post("/unblock-ip/{ip}")
     async def unblock_ip(ip: str):
         """Unblock an IP address"""
         try:
-            db = SessionLocal()
+            db = get_db_session()
             try:
                 # Find the blocked IP
                 blocked_ip = (
@@ -300,7 +300,7 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to unblock IP: {str(e)}",
-            )
+            ) from e
 
     return router
 
@@ -309,7 +309,7 @@ async def check_redis_health(redis_client: redis.Redis) -> dict[str, Any]:
     """Check Redis health"""
     try:
         start_time = time.time()
-        await redis_client.ping()
+        await redis_client.ping()  # type: ignore[misc]
         response_time = (time.time() - start_time) * 1000
 
         return {

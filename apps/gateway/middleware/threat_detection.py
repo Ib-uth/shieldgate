@@ -1,8 +1,11 @@
 """Threat detection middleware"""
 
+import time
+from collections.abc import Callable
 from typing import Any
 
-from fastapi import Request, status
+import redis.asyncio as redis
+from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -16,13 +19,13 @@ class ThreatDetectionMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app,
-        redis_client: redis.Redis,
+        get_redis_client: Callable[[], redis.Redis | None],
         model_path: str,
         flag_threshold: float = 0.7,
         block_threshold: float = 0.9,
     ):
         super().__init__(app)
-        self.redis_client = redis_client
+        self._get_redis_client = get_redis_client
         self.model_path = model_path
         self.flag_threshold = flag_threshold
         self.block_threshold = block_threshold
@@ -43,8 +46,11 @@ class ThreatDetectionMiddleware(BaseHTTPMiddleware):
             self.model = None
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Skip threat detection for health endpoints
-        if request.url.path in ["/health", "/metrics"]:
+        # Skip threat detection for health and metrics (including router prefixes)
+        path = request.url.path
+        if path == "/health" or path.startswith("/health/"):
+            return await call_next(request)
+        if path == "/metrics" or path.startswith("/metrics/"):
             return await call_next(request)
 
         # Skip if model not loaded
@@ -66,7 +72,7 @@ class ThreatDetectionMiddleware(BaseHTTPMiddleware):
             RequestLogger.log_threat_detection(
                 request_id=getattr(request.state, "request_id", "unknown"),
                 threat_score=threat_score,
-                features=features.dict(),
+                features=features.model_dump(),
                 blocked=self.model.should_block(threat_score, self.block_threshold),
             )
 
@@ -91,6 +97,8 @@ class ThreatDetectionMiddleware(BaseHTTPMiddleware):
 
             return response
 
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"Threat detection error: {e}")
             # Continue processing if threat detection fails
@@ -156,7 +164,10 @@ class ThreatDetectionMiddleware(BaseHTTPMiddleware):
             window_start = current_time - 60  # 60-second window
 
             # Count requests in the sliding window
-            count = await self.redis_client.zcount(
+            redis_client = self._get_redis_client()
+            if redis_client is None:
+                return 1
+            count = await redis_client.zcount(
                 f"rate_limit:ip:{ip}", window_start, current_time
             )
 
@@ -191,7 +202,7 @@ class ThreatAnalyzer:
             "threat_level": threat_level,
             "is_threat": self.model.is_threat(threat_score),
             "should_block": self.model.should_block(threat_score),
-            "features": features.dict(),
+            "features": features.model_dump(),
             "feature_contributions": feature_contributions,
         }
 

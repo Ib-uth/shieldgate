@@ -3,9 +3,9 @@
 import time
 from typing import Any
 
-import redis.asyncio as redis
-import redis.exceptions
+import redis.asyncio as aioredis
 from fastapi import Request, status
+from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -15,7 +15,7 @@ class RedisRateLimiter:
 
     def __init__(
         self,
-        redis_client: redis.Redis,
+        redis_client: aioredis.Redis,
         ip_requests: int = 60,
         ip_window: int = 60,
         user_requests: int = 300,
@@ -141,17 +141,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.user_requests = user_requests
         self.user_window = user_window
         self.skip_paths = skip_paths or ["/health", "/metrics"]
-        self._redis_client = None
+        self._redis_client: aioredis.Redis | None = None
 
-    async def get_redis_client(self) -> redis.Redis:
+    async def get_redis_client(self) -> aioredis.Redis:
         """Get or create Redis client"""
         if self._redis_client is None:
-            self._redis_client = redis.from_url(self.redis_url, decode_responses=True)
+            self._redis_client = aioredis.from_url(
+                self.redis_url, decode_responses=True
+            )
         return self._redis_client
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Skip rate limiting for certain paths
-        if request.url.path in self.skip_paths:
+        # Skip rate limiting for health/metrics (exact or subpaths)
+        path = request.url.path
+        if (
+            path in self.skip_paths
+            or path.startswith("/health/")
+            or path.startswith("/metrics/")
+        ):
             return await call_next(request)
 
         # Get client IP
@@ -212,7 +219,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             return response
 
-        except redis.exceptions.ConnectionError:
+        except RedisConnectionError:
             # If Redis is unavailable, allow the request but log it
             print("Redis connection failed - rate limiting disabled")
             return await call_next(request)
