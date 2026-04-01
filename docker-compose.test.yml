@@ -1,4 +1,5 @@
 # Minimal stack for CI build job (docker compose -f docker-compose.test.yml up -d)
+# Local: DOCKER_HOST=unix:///var/run/docker.sock docker compose -f docker-compose.test.yml up -d
 services:
   postgres:
     image: postgres:15
