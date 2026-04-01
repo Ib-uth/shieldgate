@@ -48,6 +48,8 @@ services:
       JWT_PRIVATE_KEY_PATH: /app/keys/private.pem
       JWT_PUBLIC_KEY_PATH: /app/keys/public.pem
       THREAT_MODEL_PATH: /app/models/threat_model.joblib
+      THREAT_SCORE_BLOCK_THRESHOLD: "2.0"
+      THREAT_SCORE_FLAG_THRESHOLD: "2.0"
     depends_on:
       postgres:
         condition: service_healthy

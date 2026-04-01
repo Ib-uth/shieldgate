@@ -286,6 +286,9 @@ jobs:
         JWT_PRIVATE_KEY_PATH: keys/private.pem
         JWT_PUBLIC_KEY_PATH: keys/public.pem
         THREAT_MODEL_PATH: models/threat_model.joblib
+        # Disable blocking/flagging in CI (scores are in [0,1]); burst rate-limit tests otherwise get 403 before 429
+        THREAT_SCORE_BLOCK_THRESHOLD: "2.0"
+        THREAT_SCORE_FLAG_THRESHOLD: "2.0"
         DOWNSTREAM_URL: http://127.0.0.1:8001
         DOWNSTREAM_API_PREFIX: api/v1
       run: |
