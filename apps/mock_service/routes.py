@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .main import require_minimum_role, require_role, verify_token
+from .auth_deps import require_minimum_role, require_role, verify_token
 
 router = APIRouter()
 

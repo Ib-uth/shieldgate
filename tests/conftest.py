@@ -2,12 +2,16 @@
 
 import asyncio
 import os
-import pytest
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from apps.gateway.utils.jwt_utils import JWTManager
-from apps.gateway.utils.ml_utils import generate_synthetic_training_data, train_threat_detection_model
+from apps.gateway.utils.ml_utils import (
+    generate_synthetic_training_data,
+    train_threat_detection_model,
+)
 
 
 @pytest.fixture(scope="session")
@@ -35,11 +39,11 @@ def jwt_manager(temp_dirs):
     keys_dir, _ = temp_dirs
     private_key = Path(keys_dir) / "test_private.pem"
     public_key = Path(keys_dir) / "test_public.pem"
-    
+
     # Generate test keys
     manager = JWTManager(str(private_key), str(public_key))
     manager.generate_key_pair(str(private_key), str(public_key))
-    
+
     yield manager
 
 
@@ -47,28 +51,32 @@ def jwt_manager(temp_dirs):
 def test_tokens(jwt_manager):
     """Generate test tokens for different roles"""
     tokens = {}
-    
-    # Admin token
-    tokens["admin"] = jwt_manager.create_token({
-        "sub": "admin-test-123",
-        "email": "admin@test.com",
-        "role": "admin"
-    })
-    
-    # User token
-    tokens["user"] = jwt_manager.create_token({
-        "sub": "user-test-456",
-        "email": "user@test.com", 
-        "role": "user"
-    })
-    
-    # Readonly token
-    tokens["readonly"] = jwt_manager.create_token({
-        "sub": "readonly-test-789",
-        "email": "readonly@test.com",
-        "role": "readonly"
-    })
-    
+
+    # Subs align with apps/mock_service MOCK_USERS for X-User-* forwarding from the gateway
+    tokens["admin"] = jwt_manager.create_token(
+        {
+            "sub": "admin-123",
+            "email": "admin@shieldgate.dev",
+            "role": "admin",
+        }
+    )
+
+    tokens["user"] = jwt_manager.create_token(
+        {
+            "sub": "user-456",
+            "email": "user@shieldgate.dev",
+            "role": "user",
+        }
+    )
+
+    tokens["readonly"] = jwt_manager.create_token(
+        {
+            "sub": "readonly-789",
+            "email": "readonly@shieldgate.dev",
+            "role": "readonly",
+        }
+    )
+
     return tokens
 
 
@@ -77,13 +85,13 @@ def threat_model(temp_dirs):
     """Create and train a threat detection model for testing"""
     _, models_dir = temp_dirs
     model_path = Path(models_dir) / "test_threat_model.joblib"
-    
+
     # Generate small training dataset
     training_data = generate_synthetic_training_data(100)
-    
+
     # Train model
-    model = train_threat_detection_model(training_data, str(model_path))
-    
+    train_threat_detection_model(training_data, str(model_path))
+
     yield str(model_path)
 
 
@@ -91,7 +99,7 @@ def threat_model(temp_dirs):
 def test_env_vars(temp_dirs, threat_model):
     """Set up test environment variables"""
     keys_dir, _ = temp_dirs
-    
+
     env_vars = {
         "DATABASE_URL": "sqlite:///./test.db",
         "REDIS_URL": "redis://localhost:6379",
@@ -105,15 +113,15 @@ def test_env_vars(temp_dirs, threat_model):
         "RATE_LIMIT_USER_WINDOW": "60",
         "THREAT_SCORE_FLAG_THRESHOLD": "0.7",
         "THREAT_SCORE_BLOCK_THRESHOLD": "0.9",
-        "ALLOWED_ORIGINS": "http://localhost:3000"
+        "ALLOWED_ORIGINS": "http://localhost:3000",
     }
-    
+
     # Set environment variables
     for key, value in env_vars.items():
         os.environ[key] = value
-    
+
     yield env_vars
-    
+
     # Clean up environment variables
     for key in env_vars:
         os.environ.pop(key, None)
@@ -123,10 +131,9 @@ def test_env_vars(temp_dirs, threat_model):
 async def gateway_client(test_env_vars):
     """Create HTTP client for gateway testing"""
     import httpx
-    
+
     async with httpx.AsyncClient(
-        base_url="http://localhost:8000",
-        timeout=30.0
+        base_url="http://localhost:8000", timeout=30.0
     ) as client:
         yield client
 
@@ -135,9 +142,8 @@ async def gateway_client(test_env_vars):
 async def mock_service_client():
     """Create HTTP client for mock service testing"""
     import httpx
-    
+
     async with httpx.AsyncClient(
-        base_url="http://localhost:8001",
-        timeout=30.0
+        base_url="http://localhost:8001", timeout=30.0
     ) as client:
         yield client

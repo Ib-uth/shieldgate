@@ -71,11 +71,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Database
-      - DATABASE_URL=postgresql://shieldgate:shieldgate123@postgres:5432/shieldgate
-      
+      # Database (override with Neon or other URL via .env)
+      - DATABASE_URL=${DATABASE_URL:-postgresql://shieldgate:shieldgate123@postgres:5432/shieldgate}
+
       # Services
       - DOWNSTREAM_URL=http://mock-service:8001
+      - DOWNSTREAM_API_PREFIX=api/v1
       - REDIS_URL=redis://redis:6379
       
       # JWT

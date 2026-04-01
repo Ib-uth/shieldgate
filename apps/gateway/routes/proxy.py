@@ -1,5 +1,6 @@
 """Request proxying routes"""
 
+import os
 import uuid
 from typing import Any
 from urllib.parse import urljoin
@@ -22,6 +23,9 @@ class RequestProxy:
         self.downstream_url = downstream_url.rstrip("/")
         self.jwt_authenticator = jwt_authenticator
         self.timeout = timeout
+        self._downstream_api_prefix = (
+            os.getenv("DOWNSTREAM_API_PREFIX", "api/v1").strip().strip("/")
+        )
 
     async def proxy_request(
         self, request: Request, path: str | None = None
@@ -31,9 +35,13 @@ class RequestProxy:
         # Generate request ID
         request_id = str(uuid.uuid4())
 
-        # Build target URL
-        target_path = path or request.url.path
-        target_url = urljoin(self.downstream_url, target_path)
+        # Build target URL (/proxy/user -> {DOWNSTREAM}/api/v1/user)
+        segment = (path if path is not None else request.url.path).strip("/")
+        if segment:
+            rel_path = f"{self._downstream_api_prefix}/{segment}"
+        else:
+            rel_path = self._downstream_api_prefix
+        target_url = urljoin(self.downstream_url + "/", rel_path)
 
         # Prepare headers
         headers = self.prepare_headers(request, request_id)

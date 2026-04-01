@@ -1,0 +1,56 @@
+# Minimal stack for CI build job (docker compose -f docker-compose.test.yml up -d)
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: test_shieldgate
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mock-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    ports:
+      - "8001:8001"
+    environment:
+      - MOCK_SERVICE_PORT=8001
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+      target: production
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/test_shieldgate
+      REDIS_URL: redis://redis:6379
+      DOWNSTREAM_URL: http://mock-service:8001
+      DOWNSTREAM_API_PREFIX: api/v1
+      JWT_PRIVATE_KEY_PATH: /app/keys/private.pem
+      JWT_PUBLIC_KEY_PATH: /app/keys/public.pem
+      THREAT_MODEL_PATH: /app/models/threat_model.joblib
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-service:
+        condition: service_started
