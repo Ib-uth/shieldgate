@@ -1,7 +1,7 @@
 """Health check and metrics endpoints"""
 
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import redis.asyncio as redis
@@ -66,7 +66,7 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
         """Get request metrics for the last N hours"""
         try:
             # Calculate time range (timezone-aware for PostgreSQL timestamptz columns)
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(datetime.UTC)
             start_time = end_time - timedelta(hours=hours)
 
             # Get metrics from database
@@ -164,7 +164,7 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
                 ]
 
                 return MetricsResponse(
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(datetime.UTC),
                     period_hours=hours,
                     total_requests=total_requests,
                     error_rate=round(error_rate, 2),
