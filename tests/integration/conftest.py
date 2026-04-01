@@ -7,6 +7,11 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import redis as redis_sync
+except ImportError:
+    redis_sync = None  # type: ignore[misc, assignment]
+
 from apps.gateway.utils.jwt_utils import JWTManager
 
 
@@ -29,3 +34,22 @@ def jwt_manager() -> JWTManager:
 def test_env_vars():
     """Avoid overriding JWT/DB in the pytest process; the gateway already started with CI env."""
     yield {}
+
+
+@pytest.fixture
+def clear_rate_limit_keys() -> None:
+    """Delete gateway rate-limit keys in Redis (same REDIS_URL as uvicorn).
+
+    Safe only for CI / local / dedicated staging Redis — never against production.
+    """
+    if redis_sync is None:
+        pytest.skip("redis package not installed (pip install redis)")
+    url = os.environ.get("REDIS_URL")
+    if not url:
+        pytest.skip("REDIS_URL is not set (required to reset rate limits)")
+    client = redis_sync.Redis.from_url(url, decode_responses=True)
+    try:
+        for key in client.scan_iter(match="rate_limit:*"):
+            client.delete(key)
+    finally:
+        client.close()

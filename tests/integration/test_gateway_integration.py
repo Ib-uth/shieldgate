@@ -76,6 +76,7 @@ class TestGatewayIntegration:
         assert response.status_code == 401
 
 
+@pytest.mark.usefixtures("clear_rate_limit_keys")
 class TestRateLimitingIntegration:
     """Test rate limiting functionality"""
 
@@ -158,6 +159,7 @@ class TestProxyIntegration:
         ]  # Auth required, unknown path, or downstream error
 
 
+@pytest.mark.usefixtures("clear_rate_limit_keys")
 class TestThreatDetectionIntegration:
     """Test threat detection functionality"""
 
