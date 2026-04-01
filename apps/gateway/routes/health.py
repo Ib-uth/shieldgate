@@ -1,5 +1,6 @@
 """Health check and metrics endpoints"""
 
+import os
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -111,28 +112,21 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
                     {"ip": ip, "blocked_count": count} for ip, count in blocked_ips
                 ]
 
-                # Threat score distribution
+                # Threat score distribution (single CASE expression for PostgreSQL GROUP BY)
+                threat_level_expr = func.case(
+                    (RequestLog.threat_score >= 0.9, "critical"),
+                    (RequestLog.threat_score >= 0.7, "high"),
+                    (RequestLog.threat_score >= 0.5, "medium"),
+                    (RequestLog.threat_score >= 0.3, "low"),
+                    else_="minimal",
+                ).label("threat_level")
                 threat_scores = (
                     db.query(
-                        func.case(
-                            (RequestLog.threat_score >= 0.9, "critical"),
-                            (RequestLog.threat_score >= 0.7, "high"),
-                            (RequestLog.threat_score >= 0.5, "medium"),
-                            (RequestLog.threat_score >= 0.3, "low"),
-                            else_="minimal",
-                        ).label("threat_level"),
+                        threat_level_expr,
                         func.count(RequestLog.id).label("count"),
                     )
                     .filter(RequestLog.timestamp >= start_time)
-                    .group_by(
-                        func.case(
-                            (RequestLog.threat_score >= 0.9, "critical"),
-                            (RequestLog.threat_score >= 0.7, "high"),
-                            (RequestLog.threat_score >= 0.5, "medium"),
-                            (RequestLog.threat_score >= 0.3, "low"),
-                            else_="minimal",
-                        )
-                    )
+                    .group_by(threat_level_expr)
                     .all()
                 )
 
@@ -357,10 +351,12 @@ async def check_downstream_health() -> dict[str, Any]:
     try:
         import httpx
 
-        downstream_url = "http://localhost:8001"  # Default mock service URL
+        downstream_url = os.getenv(
+            "DOWNSTREAM_URL", "http://localhost:8001"
+        ).rstrip("/")
         start_time = time.time()
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
             response = await client.get(f"{downstream_url}/health")
 
         response_time = (time.time() - start_time) * 1000

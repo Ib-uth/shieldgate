@@ -280,6 +280,8 @@ jobs:
     - name: Start services
       env:
         PYTHONPATH: apps
+        NO_PROXY: 127.0.0.1,localhost
+        no_proxy: 127.0.0.1,localhost
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_shieldgate
         REDIS_URL: redis://localhost:6379
         JWT_PRIVATE_KEY_PATH: keys/private.pem
@@ -304,6 +306,8 @@ jobs:
     - name: Run integration tests
       env:
         PYTHONPATH: apps
+        NO_PROXY: 127.0.0.1,localhost
+        no_proxy: 127.0.0.1,localhost
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_shieldgate
         REDIS_URL: redis://localhost:6379
         JWT_PRIVATE_KEY_PATH: keys/private.pem

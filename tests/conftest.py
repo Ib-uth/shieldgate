@@ -112,7 +112,7 @@ def test_env_vars(temp_dirs, threat_model):
         "DATABASE_URL": "sqlite:///./test.db",
         "REDIS_URL": "redis://localhost:6379",
         "THREAT_MODEL_PATH": threat_model,
-        "DOWNSTREAM_URL": "http://localhost:8001",
+        "DOWNSTREAM_URL": "http://127.0.0.1:8001",
         "RATE_LIMIT_IP_REQUESTS": "60",
         "RATE_LIMIT_IP_WINDOW": "60",
         "RATE_LIMIT_USER_REQUESTS": "300",
@@ -149,9 +149,10 @@ async def gateway_client(test_env_vars):
     import httpx
 
     async with httpx.AsyncClient(
-        base_url="http://localhost:8000",
+        base_url="http://127.0.0.1:8000",
         timeout=30.0,
         follow_redirects=True,
+        trust_env=False,
     ) as client:
         yield client
 
@@ -162,6 +163,6 @@ async def mock_service_client():
     import httpx
 
     async with httpx.AsyncClient(
-        base_url="http://localhost:8001", timeout=30.0
+        base_url="http://127.0.0.1:8001", timeout=30.0, trust_env=False
     ) as client:
         yield client

@@ -126,6 +126,9 @@ class RequestProxy:
         for header in hop_by_hop_headers:
             headers.pop(header, None)
 
+        # Let httpx set Host from the downstream URL (incoming Host is the gateway)
+        headers.pop("host", None)
+
         # Remove auth headers for security
         auth_headers = {"authorization", "cookie", "x-api-key"}
         for header in auth_headers:
