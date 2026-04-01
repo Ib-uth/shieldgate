@@ -108,44 +108,25 @@ class RequestProxy:
             ) from e
 
     def prepare_headers(self, request: Request, request_id: str) -> dict[str, str]:
-        """Prepare headers for downstream request"""
-        headers = dict(request.headers)
+        """Prepare headers for downstream request (avoid forwarding arbitrary client headers)."""
+        raw = request.headers
+        # Starlette lowercases header keys
+        incoming_ua = (raw.get("user-agent") or "").strip()
 
-        # Remove hop-by-hop headers
-        hop_by_hop_headers = {
-            "connection",
-            "keep-alive",
-            "proxy-authenticate",
-            "proxy-authorization",
-            "te",
-            "trailers",
-            "transfer-encoding",
-            "upgrade",
-            "proxy-connection",
+        headers: dict[str, str] = {
+            "X-Request-ID": request_id,
+            "X-Forwarded-For": self.get_client_ip(request),
+            "X-Forwarded-Proto": request.url.scheme,
+            "X-Forwarded-Host": raw.get("host") or "localhost",
+            "X-Forwarded-Path": request.url.path,
+            "X-Original-Method": request.method,
+            "User-Agent": f"ShieldGate/1.0 {incoming_ua}".strip()[:500],
         }
-        for header in hop_by_hop_headers:
-            headers.pop(header, None)
 
-        # Let httpx set Host from the downstream URL (incoming Host is the gateway)
-        headers.pop("host", None)
-
-        # Remove auth headers for security
-        auth_headers = {"authorization", "cookie", "x-api-key"}
-        for header in auth_headers:
-            headers.pop(header, None)
-
-        # Add proxy headers
-        headers.update(
-            {
-                "X-Request-ID": request_id,
-                "X-Forwarded-For": self.get_client_ip(request),
-                "X-Forwarded-Proto": request.url.scheme,
-                "X-Forwarded-Host": request.headers.get("host", "localhost"),
-                "X-Forwarded-Path": request.url.path,
-                "X-Original-Method": request.method,
-                "User-Agent": f"ShieldGate/1.0 {headers.get('User-Agent', '')}",
-            }
-        )
+        for key in ("content-type", "accept", "accept-language", "accept-encoding"):
+            val = raw.get(key)
+            if val:
+                headers[key] = val
 
         # Add user information if authenticated
         if hasattr(request.state, "user"):
@@ -229,8 +210,9 @@ class RequestProxy:
 def create_proxy_routes(proxy: RequestProxy):
     """Create proxy routes"""
 
-    async def proxy_handler(request: Request, path: str = ""):
-        """Main proxy handler"""
+    async def proxy_handler(request: Request):
+        """Main proxy handler (path from route; Starlette only passes Request)."""
+        path = request.path_params.get("path", "")
         return await proxy.proxy_request(request, path)
 
     async def catch_all_proxy(request: Request):

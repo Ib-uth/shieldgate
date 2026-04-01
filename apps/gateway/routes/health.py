@@ -112,26 +112,51 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
                     {"ip": ip, "blocked_count": count} for ip, count in blocked_ips
                 ]
 
-                # Threat score distribution (single CASE expression for PostgreSQL GROUP BY)
-                threat_level_expr = func.case(
-                    (RequestLog.threat_score >= 0.9, "critical"),
-                    (RequestLog.threat_score >= 0.7, "high"),
-                    (RequestLog.threat_score >= 0.5, "medium"),
-                    (RequestLog.threat_score >= 0.3, "low"),
-                    else_="minimal",
-                ).label("threat_level")
-                threat_scores = (
-                    db.query(
-                        threat_level_expr,
-                        func.count(RequestLog.id).label("count"),
-                    )
-                    .filter(RequestLog.timestamp >= start_time)
-                    .group_by(threat_level_expr)
-                    .all()
-                )
-
+                # Threat tiers (mutually exclusive ranges; avoids CASE/GROUP BY dialect quirks)
+                ts_filter = RequestLog.timestamp >= start_time
                 threat_score_distribution = {
-                    str(row[0]): int(row[1]) for row in threat_scores
+                    "critical": int(
+                        db.query(func.count(RequestLog.id))
+                        .filter(ts_filter, RequestLog.threat_score >= 0.9)
+                        .scalar()
+                        or 0
+                    ),
+                    "high": int(
+                        db.query(func.count(RequestLog.id))
+                        .filter(
+                            ts_filter,
+                            RequestLog.threat_score >= 0.7,
+                            RequestLog.threat_score < 0.9,
+                        )
+                        .scalar()
+                        or 0
+                    ),
+                    "medium": int(
+                        db.query(func.count(RequestLog.id))
+                        .filter(
+                            ts_filter,
+                            RequestLog.threat_score >= 0.5,
+                            RequestLog.threat_score < 0.7,
+                        )
+                        .scalar()
+                        or 0
+                    ),
+                    "low": int(
+                        db.query(func.count(RequestLog.id))
+                        .filter(
+                            ts_filter,
+                            RequestLog.threat_score >= 0.3,
+                            RequestLog.threat_score < 0.5,
+                        )
+                        .scalar()
+                        or 0
+                    ),
+                    "minimal": int(
+                        db.query(func.count(RequestLog.id))
+                        .filter(ts_filter, RequestLog.threat_score < 0.3)
+                        .scalar()
+                        or 0
+                    ),
                 }
 
                 # Top endpoints
