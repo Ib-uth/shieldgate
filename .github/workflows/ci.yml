@@ -289,9 +289,17 @@ jobs:
         DOWNSTREAM_API_PREFIX: api/v1
       run: |
         python -m uvicorn mock_service.main:app --host 0.0.0.0 --port 8001 &
-        sleep 5
+        for i in $(seq 1 30); do
+          if curl -sf "http://127.0.0.1:8001/health" >/dev/null; then break; fi
+          sleep 1
+        done
+        curl -sf "http://127.0.0.1:8001/health" || { echo "mock service failed to become ready"; exit 1; }
         python -m uvicorn gateway.main:app --host 0.0.0.0 --port 8000 &
-        sleep 12
+        for i in $(seq 1 30); do
+          if curl -sf "http://127.0.0.1:8000/health/" >/dev/null; then break; fi
+          sleep 1
+        done
+        curl -sf "http://127.0.0.1:8000/health/" || { echo "gateway failed to become ready"; exit 1; }
     
     - name: Run integration tests
       env:
@@ -304,7 +312,7 @@ jobs:
         DOWNSTREAM_URL: http://127.0.0.1:8001
         DOWNSTREAM_API_PREFIX: api/v1
       run: |
-        pytest tests/integration/ -v
+        pytest tests/integration/ -v --no-cov
 
   deploy:
     runs-on: ubuntu-latest

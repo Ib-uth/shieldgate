@@ -52,6 +52,8 @@ class JWTMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if path == "/auth" or path.startswith("/auth/"):
             return await call_next(request)
+        if path == "/proxy/public" or path.startswith("/proxy/public/"):
+            return await call_next(request)
 
         jwt_manager = self._get_jwt_manager()
         if jwt_manager is None:

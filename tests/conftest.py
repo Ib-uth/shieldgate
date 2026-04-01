@@ -133,7 +133,9 @@ async def gateway_client(test_env_vars):
     import httpx
 
     async with httpx.AsyncClient(
-        base_url="http://localhost:8000", timeout=30.0
+        base_url="http://localhost:8000",
+        timeout=30.0,
+        follow_redirects=True,
     ) as client:
         yield client
 

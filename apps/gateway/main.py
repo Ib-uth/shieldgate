@@ -120,17 +120,8 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Add CORS middleware
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Middleware must be registered at import time (Starlette forbids add_middleware during startup).
+# Order: first registered is innermost (closest to routes); last registered is outermost (runs first).
 _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 app.add_middleware(
     RateLimitMiddleware,
@@ -141,7 +132,6 @@ app.add_middleware(
     user_window=int(os.getenv("RATE_LIMIT_USER_WINDOW", 60)),
     skip_paths=["/health", "/metrics"],
 )
-# JWT added after threat so it is outermost (Starlette runs last-added first).
 _model_path = os.getenv("THREAT_MODEL_PATH", "./models/threat_model.joblib")
 _flag_t = float(os.getenv("THREAT_SCORE_FLAG_THRESHOLD", 0.7))
 _block_t = float(os.getenv("THREAT_SCORE_BLOCK_THRESHOLD", 0.9))
@@ -156,6 +146,15 @@ app.add_middleware(
     JWTMiddleware,
     get_jwt_manager=lambda: jwt_manager,
     public_paths=["/health", "/metrics", "/auth"],
+)
+# CORS last so it is outermost: handles OPTIONS preflight before JWT / route matching.
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

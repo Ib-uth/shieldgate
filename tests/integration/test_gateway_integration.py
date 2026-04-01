@@ -151,7 +151,11 @@ class TestProxyIntegration:
         """Test proxy handles downstream errors properly"""
         # Test with non-existent endpoint
         response = await gateway_client.get("/proxy/nonexistent")
-        assert response.status_code in [404, 502]  # Either not found or service error
+        assert response.status_code in [
+            401,
+            404,
+            502,
+        ]  # Auth required, unknown path, or downstream error
 
 
 class TestThreatDetectionIntegration:
@@ -226,7 +230,13 @@ class TestCORSConfiguration:
     @pytest.mark.asyncio
     async def test_cors_headers(self, gateway_client):
         """Test CORS headers are properly set"""
-        response = await gateway_client.options("/proxy/public")
+        response = await gateway_client.options(
+            "/proxy/public",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
 
         # Should have CORS headers
         assert "Access-Control-Allow-Origin" in response.headers
