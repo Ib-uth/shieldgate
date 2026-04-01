@@ -318,6 +318,54 @@ docker-compose logs -f gateway
 - Set up backup and disaster recovery
 - Implement proper secret management
 
+### Render Deployment
+
+ShieldGate can be deployed to Render using the provided `render.yaml` configuration file.
+
+#### Prerequisites
+- Render account
+- GitHub repository with the code
+- PostgreSQL database (Render managed)
+- Redis instance (Render managed)
+
+#### Quick Deploy
+1. **Connect Repository**: Link your GitHub repository to Render
+2. **Create Services**: Render will automatically create services from `render.yaml`
+3. **Configure Secrets**: Set the `DATABASE_URL` secret in the gateway service
+4. **Deploy**: Render will build and deploy the services
+
+#### Services Configuration
+- **Gateway Web Service**: Docker-based, port 8000, auto-scaling
+- **Redis Instance**: Managed Redis for rate limiting and caching
+- **PostgreSQL Database**: Managed PostgreSQL for request logging
+
+#### Environment Variables
+The `render.yaml` file configures all required environment variables:
+- `DATABASE_URL`: Set as secret (configure in Render dashboard)
+- `REDIS_URL`: Automatically set from Redis service connection
+- All other variables use sensible defaults
+
+#### Manual Setup
+If not using `render.yaml`, create these services manually:
+
+1. **PostgreSQL Database**
+   - Type: PostgreSQL
+   - Version: 15
+   - Set connection string as `DATABASE_URL` secret
+
+2. **Redis Instance**
+   - Type: Redis
+   - Connection string automatically available to gateway
+
+3. **Web Service**
+   - Type: Docker
+   - Dockerfile path: `Dockerfile.gateway`
+   - Port: 8000
+   - Add environment variables from `.env.example`
+
+#### Health Checks
+Render automatically monitors the `/health` endpoint for service health.
+
 ## 📈 Performance
 
 ### Benchmarks

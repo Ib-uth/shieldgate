@@ -1,0 +1,118 @@
+services:
+  # ShieldGate API Gateway Web Service
+  - type: web
+    name: shieldgate-gateway
+    env: docker
+    dockerfilePath: ./Dockerfile.gateway
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    numInstances: 1
+    envVars:
+      # Database Configuration (Secret - configure in Render dashboard)
+      - key: DATABASE_URL
+        sync: false
+        value: "postgresql://user:password@host:5432/shieldgate"
+      
+      # Services Configuration
+      - key: DOWNSTREAM_URL
+        sync: false
+        value: "https://your-mock-service.onrender.com"
+      
+      - key: REDIS_URL
+        sync: false
+        value: "${redis://shieldgate-redis}"
+      
+      # JWT Configuration
+      - key: JWT_PRIVATE_KEY_PATH
+        sync: false
+        value: "/app/keys/private.pem"
+      
+      - key: JWT_PUBLIC_KEY_PATH
+        sync: false
+        value: "/app/keys/public.pem"
+      
+      # Rate Limiting Configuration
+      - key: RATE_LIMIT_IP_REQUESTS
+        sync: false
+        value: "60"
+      
+      - key: RATE_LIMIT_IP_WINDOW
+        sync: false
+        value: "60"
+      
+      - key: RATE_LIMIT_USER_REQUESTS
+        sync: false
+        value: "300"
+      
+      - key: RATE_LIMIT_USER_WINDOW
+        sync: false
+        value: "60"
+      
+      # Threat Detection Configuration
+      - key: THREAT_SCORE_FLAG_THRESHOLD
+        sync: false
+        value: "0.7"
+      
+      - key: THREAT_SCORE_BLOCK_THRESHOLD
+        sync: false
+        value: "0.9"
+      
+      - key: THREAT_MODEL_PATH
+        sync: false
+        value: "/app/models/threat_model.joblib"
+      
+      # Gateway Configuration
+      - key: GATEWAY_HOST
+        sync: false
+        value: "0.0.0.0"
+      
+      - key: GATEWAY_PORT
+        sync: false
+        value: "8000"
+      
+      # CORS Configuration
+      - key: ALLOWED_ORIGINS
+        sync: false
+        value: "https://shieldgate-gateway.onrender.com"
+      
+      # Logging Configuration
+      - key: LOG_LEVEL
+        sync: false
+        value: "INFO"
+    
+    # Auto-scaling configuration
+    autoDeploy: true
+    buildCommand: "echo 'Build handled by Dockerfile'"
+    startCommand: "python -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000"
+
+  # Redis Instance for Rate Limiting and Caching
+  - type: redis
+    name: shieldgate-redis
+    plan: starter
+    region: oregon
+    ipAllowList: []  # Restrict to internal services only
+    
+    # Redis Configuration
+    envVars:
+      - key: REDIS_MAXMEMORY_POLICY
+        sync: false
+        value: "allkeys-lru"  # Least Recently Used eviction policy
+
+databases:
+  # PostgreSQL Database for Request Logging
+  - name: shieldgate-db
+    databaseName: shieldgate
+    user: shieldgate
+    plan: starter
+    region: oregon
+    
+    # PostgreSQL Configuration
+    envVars:
+      - key: POSTGRES_VERSION
+        sync: false
+        value: "15"
+      
+      - key: POSTGRES_EXTENSIONS
+        sync: false
+        value: "uuid-ossp,pg_stat_statements"
