@@ -134,10 +134,13 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
-    # Secrets cannot be used in `if:`; gate with a repo VARIABLE (Actions → Variables).
-    # Set DOCKER_PUSH_TO_HUB=true and add DOCKER_USERNAME + DOCKER_PASSWORD secrets to push images.
+    # Variables: DOCKER_PUSH_TO_HUB=true, DOCKERHUB_NAMESPACE=your-dockerhub-username (or org).
+    # Secrets: DOCKER_USERNAME, DOCKER_PASSWORD (access token). Images push as NAMESPACE/gateway, NAMESPACE/mock.
     - name: Login to Docker Hub
-      if: github.ref == 'refs/heads/main' && vars.DOCKER_PUSH_TO_HUB == 'true'
+      if: >
+        github.ref == 'refs/heads/main' &&
+        vars.DOCKER_PUSH_TO_HUB == 'true' &&
+        vars.DOCKERHUB_NAMESPACE != ''
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
@@ -171,7 +174,10 @@ jobs:
         docker compose -f docker-compose.test.yml down -v
     
     - name: Push Gateway image
-      if: github.ref == 'refs/heads/main' && vars.DOCKER_PUSH_TO_HUB == 'true'
+      if: >
+        github.ref == 'refs/heads/main' &&
+        vars.DOCKER_PUSH_TO_HUB == 'true' &&
+        vars.DOCKERHUB_NAMESPACE != ''
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -179,19 +185,22 @@ jobs:
         target: production
         push: true
         tags: |
-          shieldgate/gateway:latest
-          shieldgate/gateway:${{ github.sha }}
+          ${{ vars.DOCKERHUB_NAMESPACE }}/gateway:latest
+          ${{ vars.DOCKERHUB_NAMESPACE }}/gateway:${{ github.sha }}
     
     - name: Push Mock Service image
-      if: github.ref == 'refs/heads/main' && vars.DOCKER_PUSH_TO_HUB == 'true'
+      if: >
+        github.ref == 'refs/heads/main' &&
+        vars.DOCKER_PUSH_TO_HUB == 'true' &&
+        vars.DOCKERHUB_NAMESPACE != ''
       uses: docker/build-push-action@v5
       with:
         context: .
         file: Dockerfile.mock
         push: true
         tags: |
-          shieldgate/mock:latest
-          shieldgate/mock:${{ github.sha }}
+          ${{ vars.DOCKERHUB_NAMESPACE }}/mock:latest
+          ${{ vars.DOCKERHUB_NAMESPACE }}/mock:${{ github.sha }}
 
   frontend-test:
     runs-on: ubuntu-latest

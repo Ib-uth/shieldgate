@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for ShieldGate API Gateway
-FROM python:3.11-slim as base
+FROM python:3.11-slim AS base
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -42,7 +42,7 @@ USER shieldgate
 RUN mkdir -p /app/keys /app/models /app/logs
 
 # Training stage - generate threat detection model
-FROM base as training
+FROM base AS training
 
 # Copy training script
 COPY scripts/ ./scripts/
@@ -52,7 +52,7 @@ RUN python scripts/generate_keys.py --private-key /app/keys/private.pem --public
     python scripts/train_model.py --output /app/models/threat_model.joblib --samples 10000
 
 # Production stage
-FROM base as production
+FROM base AS production
 
 # Copy artifacts from training stage
 COPY --from=training /app/keys /app/keys
