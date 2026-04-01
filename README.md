@@ -325,7 +325,7 @@ ShieldGate can be deployed to Render using the provided `render.yaml` configurat
 #### Prerequisites
 - Render account
 - GitHub repository with the code
-- PostgreSQL database (Render managed)
+- Neon PostgreSQL database (external)
 - Redis instance (Render managed)
 
 #### Quick Deploy
@@ -337,21 +337,21 @@ ShieldGate can be deployed to Render using the provided `render.yaml` configurat
 #### Services Configuration
 - **Gateway Web Service**: Docker-based, port 8000, auto-scaling
 - **Redis Instance**: Managed Redis for rate limiting and caching
-- **PostgreSQL Database**: Managed PostgreSQL for request logging
+- **Neon PostgreSQL**: External PostgreSQL database for request logging
 
 #### Environment Variables
 The `render.yaml` file configures all required environment variables:
-- `DATABASE_URL`: Set as secret (configure in Render dashboard)
+- `DATABASE_URL`: Pre-configured with Neon PostgreSQL connection string
 - `REDIS_URL`: Automatically set from Redis service connection
 - All other variables use sensible defaults
 
 #### Manual Setup
 If not using `render.yaml`, create these services manually:
 
-1. **PostgreSQL Database**
-   - Type: PostgreSQL
-   - Version: 15
-   - Set connection string as `DATABASE_URL` secret
+1. **Neon PostgreSQL Database**
+   - Use your existing Neon database
+   - Set connection string as `DATABASE_URL` environment variable
+   - Ensure SSL mode is enabled
 
 2. **Redis Instance**
    - Type: Redis

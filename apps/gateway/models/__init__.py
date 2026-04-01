@@ -1,20 +1,22 @@
 """Database models and schemas"""
 
-from .database import Base, RequestLog, BlockedIP, Metrics, SessionLocal
+from .database import Base, BlockedIP, Metrics, RequestLog, SessionLocal
 from .schemas import (
-    RequestLog as RequestLogSchema,
     HealthResponse,
     MetricsResponse,
-    TokenResponse,
-    UserClaims,
     ProxyRequest,
     ThreatFeatures,
+    TokenResponse,
+    UserClaims,
+)
+from .schemas import (
+    RequestLog as RequestLogSchema,
 )
 
 __all__ = [
     "Base",
     "RequestLog",
-    "BlockedIP", 
+    "BlockedIP",
     "Metrics",
     "RequestLogSchema",
     "HealthResponse",

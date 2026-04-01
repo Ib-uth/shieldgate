@@ -9,10 +9,10 @@ services:
     healthCheckPath: /health
     numInstances: 1
     envVars:
-      # Database Configuration (Secret - configure in Render dashboard)
+      # Database Configuration (Neon PostgreSQL)
       - key: DATABASE_URL
         sync: false
-        value: "postgresql://user:password@host:5432/shieldgate"
+        value: "postgresql://neondb_owner:npg_xZJWpwh2bOA6@ep-frosty-boat-a4bscze7-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
       
       # Services Configuration
       - key: DOWNSTREAM_URL
@@ -99,20 +99,5 @@ services:
         sync: false
         value: "allkeys-lru"  # Least Recently Used eviction policy
 
-databases:
-  # PostgreSQL Database for Request Logging
-  - name: shieldgate-db
-    databaseName: shieldgate
-    user: shieldgate
-    plan: starter
-    region: oregon
-    
-    # PostgreSQL Configuration
-    envVars:
-      - key: POSTGRES_VERSION
-        sync: false
-        value: "15"
-      
-      - key: POSTGRES_EXTENSIONS
-        sync: false
-        value: "uuid-ossp,pg_stat_statements"
+databases: []
+# Note: Using external Neon PostgreSQL database instead of Render's managed database
