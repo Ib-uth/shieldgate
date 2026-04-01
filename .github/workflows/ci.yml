@@ -1,0 +1,299 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff black mypy
+    
+    - name: Run Ruff
+      run: ruff check apps/
+    
+    - name: Run Black
+      run: black --check apps/
+    
+    - name: Run MyPy
+      run: mypy apps/gateway/
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_shieldgate
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov hypothesis
+    
+    - name: Generate RSA keys
+      run: |
+        mkdir -p keys models
+        python scripts/generate_keys.py --private-key keys/private.pem --public-key keys/public.pem
+        python scripts/train_model.py --output models/threat_model.joblib --samples 1000
+    
+    - name: Run tests with coverage
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_shieldgate
+        REDIS_URL: redis://localhost:6379
+        JWT_PRIVATE_KEY_PATH: keys/private.pem
+        JWT_PUBLIC_KEY_PATH: keys/public.pem
+        THREAT_MODEL_PATH: models/threat_model.joblib
+      run: |
+        pytest apps/gateway/tests/ -v --cov=apps/gateway --cov-report=xml --cov-report=html --cov-fail-under=80
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+    
+    - name: Check for security vulnerabilities
+      run: safety check -r requirements.txt
+    
+    - name: Run Bandit security linter
+      run: bandit -r apps/gateway/ -f json -o bandit-report.json
+    
+    - name: Upload Bandit report
+      uses: actions/upload-artifact@v3
+      with:
+        name: bandit-report
+        path: bandit-report.json
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      if: github.ref == 'refs/heads/main'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and test Gateway image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile.gateway
+        target: production
+        push: false
+        load: true
+        tags: shieldgate/gateway:test
+    
+    - name: Build and test Mock Service image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile.mock
+        push: false
+        load: true
+        tags: shieldgate/mock:test
+    
+    - name: Run Docker Compose tests
+      run: |
+        docker-compose -f docker-compose.test.yml up -d
+        sleep 30  # Wait for services to be ready
+        curl -f http://localhost:8000/health
+        curl -f http://localhost:8001/health
+        docker-compose -f docker-compose.test.yml down
+    
+    - name: Push Gateway image
+      if: github.ref == 'refs/heads/main'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile.gateway
+        target: production
+        push: true
+        tags: |
+          shieldgate/gateway:latest
+          shieldgate/gateway:${{ github.sha }}
+    
+    - name: Push Mock Service image
+      if: github.ref == 'refs/heads/main'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile.mock
+        push: true
+        tags: |
+          shieldgate/mock:latest
+          shieldgate/mock:${{ github.sha }}
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: apps/admin-ui/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: ./apps/admin-ui
+      run: npm ci
+    
+    - name: Run ESLint
+      working-directory: ./apps/admin-ui
+      run: npm run lint
+    
+    - name: Run TypeScript check
+      working-directory: ./apps/admin-ui
+      run: npm run build
+    
+    - name: Build frontend
+      working-directory: ./apps/admin-ui
+      run: npm run build
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: [build]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_shieldgate
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest httpx
+    
+    - name: Generate keys and model
+      run: |
+        mkdir -p keys models
+        python scripts/generate_keys.py --private-key keys/private.pem --public-key keys/public.pem
+        python scripts/train_model.py --output models/threat_model.joblib --samples 1000
+    
+    - name: Start services
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_shieldgate
+        REDIS_URL: redis://localhost:6379
+        JWT_PRIVATE_KEY_PATH: keys/private.pem
+        JWT_PUBLIC_KEY_PATH: keys/public.pem
+        THREAT_MODEL_PATH: models/threat_model.joblib
+        DOWNSTREAM_URL: http://localhost:8001
+      run: |
+        python -m uvicorn apps.mock_service.main:app --host 0.0.0.0 --port 8001 &
+        sleep 5
+        python -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 &
+        sleep 10
+    
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_shieldgate
+        REDIS_URL: redis://localhost:6379
+        JWT_PRIVATE_KEY_PATH: keys/private.pem
+        JWT_PUBLIC_KEY_PATH: keys/public.pem
+        THREAT_MODEL_PATH: models/threat_model.joblib
+        DOWNSTREAM_URL: http://localhost:8001
+      run: |
+        pytest tests/integration/ -v
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test, security, build, frontend-test, integration-test]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+    - name: Deploy to production
+      run: |
+        echo "Deploy to production environment"
+        # Add deployment steps here
