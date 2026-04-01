@@ -1,9 +1,18 @@
 """SQLAlchemy database models"""
 
+import os
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Index
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, Index, create_engine
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import func
+
+# Create database engine from environment variable
+DATABASE_URL = os.environ.get("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+
+# Create session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 

@@ -20,7 +20,7 @@ from .routes.proxy import RequestProxy, create_proxy_routes
 from .routes.health import create_health_routes
 from .routes.admin import create_admin_routes
 from .routes.auth import create_auth_routes
-from .models.database import Base
+from .models.database import Base, engine
 
 
 # Global variables for services
@@ -29,7 +29,6 @@ jwt_authenticator: Optional[JWTAuthenticator] = None
 rbac_middleware: Optional[RBACMiddleware] = None
 request_proxy: Optional[RequestProxy] = None
 redis_client: Optional[redis.Redis] = None
-database_engine = None
 
 
 @asynccontextmanager
@@ -44,9 +43,19 @@ async def lifespan(app: FastAPI):
 
 async def startup():
     """Initialize application services"""
-    global jwt_manager, jwt_authenticator, rbac_middleware, request_proxy, redis_client, database_engine
+    global jwt_manager, jwt_authenticator, rbac_middleware, request_proxy, redis_client
     
     print("Starting ShieldGate API Gateway...")
+    
+    # Initialize Redis
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    try:
+        redis_client = redis.from_url(redis_url)
+        await redis_client.ping()
+        print("Redis connection established")
+    except Exception as e:
+        print(f"Failed to connect to Redis: {e}")
+        redis_client = None
     
     # Initialize JWT manager
     private_key_path = os.getenv("JWT_PRIVATE_KEY_PATH", "./keys/private.pem")
@@ -54,49 +63,45 @@ async def startup():
     
     try:
         jwt_manager = JWTManager(private_key_path, public_key_path)
-        jwt_authenticator = JWTAuthenticator(jwt_manager)
-        print("JWT manager initialized")
+        if jwt_manager.load_keys():
+            print("JWT keys loaded successfully")
+            jwt_authenticator = JWTAuthenticator(jwt_manager)
+        else:
+            print("Failed to load JWT keys, generating new ones...")
+            jwt_manager.generate_key_pair(private_key_path, public_key_path)
+            jwt_manager.load_keys()
+            jwt_authenticator = JWTAuthenticator(jwt_manager)
     except Exception as e:
         print(f"Failed to initialize JWT manager: {e}")
-        raise
     
-    # Initialize RBAC middleware
-    rbac_middleware = RBACMiddleware(jwt_authenticator)
-    print("RBAC middleware initialized")
+    # Initialize RBAC
+    if jwt_manager:
+        rbac_middleware = RBACMiddleware()
+        print("RBAC middleware initialized")
     
-    # Initialize Redis client
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    # Initialize request proxy
+    downstream_url = os.getenv("DOWNSTREAM_URL", "http://localhost:8001")
     try:
-        redis_client = redis.from_url(redis_url, decode_responses=True)
-        # Test Redis connection
-        await redis_client.ping()
-        print("Redis client initialized")
+        request_proxy = RequestProxy(downstream_url)
+        print("Request proxy initialized")
     except Exception as e:
-        print(f"Failed to connect to Redis: {e}")
-        raise
+        print(f"Failed to initialize request proxy: {e}")
     
     # Initialize database
-    database_url = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/shieldgate")
     try:
-        database_engine = create_engine(database_url)
-        # Create tables
-        Base.metadata.create_all(bind=database_engine)
+        # Create tables using the engine from database.py
+        Base.metadata.create_all(bind=engine)
         print("Database initialized")
     except Exception as e:
         print(f"Failed to initialize database: {e}")
         raise
-    
-    # Initialize request proxy
-    downstream_url = os.getenv("DOWNSTREAM_URL", "http://localhost:8001")
-    request_proxy = RequestProxy(downstream_url, jwt_authenticator)
-    print(f"Request proxy initialized for downstream: {downstream_url}")
     
     print("ShieldGate API Gateway started successfully!")
 
 
 async def shutdown():
     """Cleanup application services"""
-    global redis_client, database_engine
+    global redis_client
     
     print("Shutting down ShieldGate API Gateway...")
     
@@ -106,9 +111,8 @@ async def shutdown():
         print("Redis connection closed")
     
     # Close database connections
-    if database_engine:
-        database_engine.dispose()
-        print("Database connections closed")
+    engine.dispose()
+    print("Database connections closed")
     
     print("ShieldGate API Gateway shut down complete")
 
@@ -196,12 +200,12 @@ def setup_routes():
         raise RuntimeError("Request proxy not initialized")
     
     # Health and metrics routes
-    health_router, metrics_router = create_health_routes(redis_client, database_engine)
+    health_router, metrics_router = create_health_routes(redis_client, engine)
     app.include_router(health_router, prefix="/health", tags=["health"])
     app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
     
     # Admin routes
-    admin_router = create_admin_routes(rbac_middleware, database_engine)
+    admin_router = create_admin_routes(rbac_middleware, engine)
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
     
     # Proxy routes

@@ -1,6 +1,6 @@
 """Database models and schemas"""
 
-from .database import Base, RequestLog, BlockedIP, Metrics
+from .database import Base, RequestLog, BlockedIP, Metrics, SessionLocal
 from .schemas import (
     RequestLog as RequestLogSchema,
     HealthResponse,
