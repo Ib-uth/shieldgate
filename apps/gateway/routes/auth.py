@@ -12,12 +12,19 @@ from pydantic import BaseModel
 
 from ..utils.jwt_utils import JWTManager, create_sample_tokens
 
-_COOKIE_KWARGS = {
-    "max_age": 7 * 24 * 60 * 60,
-    "httponly": True,
-    "secure": True,
-    "samesite": "none",
-}
+_REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60
+
+
+def _set_refresh_token_cookie(response: Response, token: str) -> None:
+    """httpOnly refresh cookie for cross-site admin UI (HTTPS)."""
+    response.set_cookie(
+        key="refresh_token",
+        value=token,
+        max_age=_REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
 
 
 # Schemas
@@ -123,7 +130,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         )
 
         # Set refresh token in httpOnly cookie (cross-site admin UI + HTTPS gateway)
-        response.set_cookie(key="refresh_token", value=refresh_token, **_COOKIE_KWARGS)
+        _set_refresh_token_cookie(response, refresh_token)
 
         return LoginResponse(
             access_token=access_token, expires_in=15 * 60, token_type="bearer"
@@ -209,9 +216,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
             claims_raw,
         )
 
-        response.set_cookie(
-            key="refresh_token", value=new_refresh_token, **_COOKIE_KWARGS
-        )
+        _set_refresh_token_cookie(response, new_refresh_token)
 
         return TokenResponse(
             access_token=new_access_token, expires_in=15 * 60, token_type="bearer"
