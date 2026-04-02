@@ -17,7 +17,7 @@ services:
       # Services Configuration
       - key: DOWNSTREAM_URL
         sync: false
-        value: "https://your-mock-service.onrender.com"
+        value: "https://your-live-backend.example.com"
       
       - key: REDIS_URL
         sync: false
