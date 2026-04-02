@@ -102,7 +102,8 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
 
         # Create access token (15 minutes)
         access_token = jwt_manager.create_token(
-            {"sub": user_id, "email": email_for_claims, "role": role}, expires_in=15 * 60
+            {"sub": user_id, "email": email_for_claims, "role": role},
+            expires_in=15 * 60,
         )  # 15 minutes
 
         # Create refresh token (7 days)
