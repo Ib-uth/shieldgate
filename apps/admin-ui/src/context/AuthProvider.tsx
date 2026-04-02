@@ -12,8 +12,18 @@ import { setAccessTokenGetter, setUnauthorizedHandler } from '../api/tokenAccess
 
 import { AuthContext, type AuthContextValue } from './auth-context';
 
+const ACCESS_TOKEN_KEY = 'shieldgate_access_token';
+
+function readStoredToken(): string | null {
+  try {
+    return sessionStorage.getItem(ACCESS_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(readStoredToken);
   const navigate = useNavigate();
   const tokenRef = useRef<string | null>(null);
   tokenRef.current = token;
@@ -24,6 +34,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      try {
+        sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+      } catch {
+        /* ignore */
+      }
       setToken(null);
       navigate('/login', { replace: true });
     });
@@ -35,10 +50,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
     });
-    setToken(res.data.access_token);
+    const access = res.data.access_token;
+    try {
+      sessionStorage.setItem(ACCESS_TOKEN_KEY, access);
+    } catch {
+      /* ignore quota / private mode */
+    }
+    setToken(access);
   }, []);
 
   const logout = useCallback(() => {
+    try {
+      sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    } catch {
+      /* ignore */
+    }
     setToken(null);
     navigate('/login', { replace: true });
   }, [navigate]);

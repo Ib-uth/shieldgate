@@ -1,0 +1,2 @@
+# Netlify / Render-style SPA fallback: serve index.html for client routes
+/*    /index.html   200

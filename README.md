@@ -39,6 +39,12 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
 - Gateway API: `https://shieldgate-gateway.onrender.com`
 - Admin dashboard: `https://shieldgate.onrender.com`
 
+**Admin dashboard (static hosting and health)**:
+
+- **SPA routing**: Direct navigation or a full refresh on client routes such as `/login` only works if the static host serves `index.html` for paths that are not real files. The admin UI ships [`apps/admin-ui/public/_redirects`](apps/admin-ui/public/_redirects) (Netlify-style: `/*` → `/index.html` with status 200). If your provider ignores that file, configure an equivalent **rewrite** in its dashboard (for example on Render Static Sites: rewrite `/*` to `/index.html` with HTTP 200).
+
+- **`DOWNSTREAM_URL` and system health**: The gateway checks downstream availability with **`GET {DOWNSTREAM_URL}/health`**. That endpoint must return **200**; otherwise the admin **System Health** panel reports downstream failure (for example “Downstream returned 404”) and overall status may show as **degraded**, even when Redis and the database are fine.
+
 ## 🏗️ Architecture
 
 ```
