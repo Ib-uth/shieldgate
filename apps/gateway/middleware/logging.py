@@ -34,17 +34,37 @@ structlog.configure(
 logger = structlog.get_logger()
 
 
+def _path_matches_skip_prefixes(path: str, prefixes: list[str]) -> bool:
+    """True if path equals a prefix or starts with prefix + '/' (subpaths)."""
+    for p in prefixes:
+        if path == p or path.startswith(f"{p}/"):
+            return True
+    return False
+
+
 class StructuredLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware for structured JSON logging of all requests"""
 
-    def __init__(self, app, log_to_db: bool = True):
+    def __init__(
+        self,
+        app,
+        log_to_db: bool = True,
+        skip_db_log_prefixes: list[str] | None = None,
+    ):
         super().__init__(app)
         self.log_to_db = log_to_db
+        self.skip_db_log_prefixes = skip_db_log_prefixes or []
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Generate request ID
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
+
+        path = request.url.path
+        if _path_matches_skip_prefixes(path, self.skip_db_log_prefixes):
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
 
         # Record start time
         start_time = time.time()
@@ -72,8 +92,8 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
                 response_info=response_info,
             )
 
-            # Log request completion
-            logger.info("request_completed", request_id=request_id, **log_entry)
+            # Log request completion (log_entry already includes request_id)
+            logger.info("request_completed", **log_entry)
 
             # Store in database if enabled
             if self.log_to_db:
@@ -172,19 +192,26 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
         error: str | None = None,
     ) -> dict[str, Any]:
         """Create a log entry dictionary"""
+        raw_threat = request_info.get("threat_score", 0.0) or 0.0
+        if hasattr(raw_threat, "item"):
+            threat_score = float(raw_threat.item())
+        else:
+            threat_score = float(raw_threat)
         return {
             "request_id": request_id,
             "timestamp": request_info["timestamp"],
             "method": request_info["method"],
             "path": request_info["path"],
             "status_code": response_info["status_code"],
-            "latency_ms": response_info["latency_ms"],
+            "latency_ms": float(response_info["latency_ms"]),
             "user_id": request_info.get("user_id"),
             "ip": request_info["client_ip"],
             "user_agent": request_info["user_agent"],
-            "threat_score": request_info.get("threat_score", 0.0),
-            "blocked": response_info["status_code"] == 429
-            or response_info["status_code"] == 403,
+            "threat_score": threat_score,
+            "blocked": bool(
+                response_info["status_code"] == 429
+                or response_info["status_code"] == 403
+            ),
             "headers": json.dumps(request_info["headers"]),
             "response_size": response_info.get("response_size", 0),
             "error": error,

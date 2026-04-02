@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .middleware.auth import JWTAuthenticator, JWTMiddleware
+from .middleware.logging import StructuredLoggingMiddleware
 from .middleware.ratelimit import RateLimitMiddleware
 from .middleware.rbac import RBACMiddleware
 from .middleware.threat_detection import ThreatDetectionMiddleware
@@ -151,7 +152,13 @@ app = FastAPI(
 
 # Middleware must be registered at import time (Starlette forbids add_middleware during startup).
 # Order: first registered is innermost (closest to routes); last registered is outermost (runs first).
+# StructuredLogging is innermost so JWT/Threat have already set request.state when we read it.
 _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+app.add_middleware(
+    StructuredLoggingMiddleware,
+    log_to_db=True,
+    skip_db_log_prefixes=["/health", "/metrics"],
+)
 app.add_middleware(
     RateLimitMiddleware,
     redis_url=_redis_url,

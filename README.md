@@ -45,6 +45,16 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
 
 - **`DOWNSTREAM_URL` and system health**: The gateway checks downstream availability with **`GET {DOWNSTREAM_URL}/health`**. That endpoint must return **200**; otherwise the admin **System Health** panel reports downstream failure (for example “Downstream returned 404”) and overall status may show as **degraded**, even when Redis and the database are fine.
 
+7. **Dashboard metrics and test traffic**: Metrics and “Recent requests” come from **`request_logs`** in PostgreSQL. The gateway writes a row per request via **`StructuredLoggingMiddleware`** when **`DATABASE_URL`** is set. The static admin URL (e.g. `https://shieldgate.onrender.com/login`) is only the React app; it does **not** return a JSON token. Obtain a JWT from the **gateway**: **`POST https://<gateway-host>/auth/login`** with `{"email","password"}`, then send authenticated traffic to the gateway (for example **`GET /`** with `Authorization: Bearer <access_token>`). To generate many sample requests locally or against a deployment:
+
+   ```bash
+   export GATEWAY_URL=https://shieldgate-gateway.onrender.com
+   export ACCESS_TOKEN='<paste access_token from login response>'
+   python scripts/flood_gateway_requests.py --count 50
+   ```
+
+   Use `--path /proxy/ping` only if **`DOWNSTREAM_URL`** is reachable; otherwise the default **`/`** is enough to populate metrics. Do not commit real tokens.
+
 ## 🏗️ Architecture
 
 ```
