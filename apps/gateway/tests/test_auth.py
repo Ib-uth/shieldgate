@@ -51,8 +51,9 @@ class TestJWTAuthentication:
         """Test protected endpoints accept valid tokens"""
         headers = {"Authorization": f"Bearer {self.admin_token}"}
         response = self.client.get("/admin/stats", headers=headers)
-        # Should work if admin stats endpoint exists
-        assert response.status_code in [200, 404]  # 404 if endpoint doesn't exist yet
+        # Auth must succeed (not 401). Handler may 500 without a reachable DB in tests.
+        assert response.status_code != 401
+        assert response.status_code in (200, 500)
 
     def test_invalid_token_rejected(self):
         """Test invalid tokens are rejected"""

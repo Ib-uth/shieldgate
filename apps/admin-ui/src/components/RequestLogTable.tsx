@@ -95,7 +95,7 @@ export const RequestLogTable: React.FC = () => {
             {requests?.length === 0 ? (
               <tr>
                 <td colSpan={9} className="table-cell text-center text-gray-500">
-                  No requests found
+                  No data yet — send some requests through the gateway to see activity.
                 </td>
               </tr>
             ) : (

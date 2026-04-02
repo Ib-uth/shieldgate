@@ -55,7 +55,7 @@ export const useRecentRequests = (limit: number = 50, blockedOnly: boolean = fal
       return response.data;
     },
     {
-      refetchInterval: pollUnlessError(15000),
+      refetchInterval: pollUnlessError(5000),
     }
   );
 };
@@ -81,7 +81,7 @@ export const useAdminStats = () => {
       return response.data;
     },
     {
-      refetchInterval: pollUnlessError(20000),
+      refetchInterval: pollUnlessError(5000),
     }
   );
 };

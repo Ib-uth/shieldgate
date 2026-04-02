@@ -1,5 +1,6 @@
 """Authentication routes for login, refresh, and logout"""
 
+import os
 import secrets
 from datetime import timedelta
 from typing import Any
@@ -10,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from ..middleware.rbac import require_role
-from ..utils.jwt_utils import JWTManager
+from ..utils.jwt_utils import JWTManager, create_sample_tokens
 
 
 # Schemas
@@ -42,6 +43,18 @@ refresh_scheme = HTTPBearer(auto_error=False)
 def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> APIRouter:
     """Create authentication routes"""
     router = APIRouter(prefix="/auth", tags=["authentication"])
+
+    @router.get("/test-tokens")
+    async def test_tokens() -> dict[str, str]:
+        """
+        Development-only: return sample JWTs for admin, user, and readonly roles.
+        Disabled in production (returns 404).
+        """
+        if os.getenv("ENVIRONMENT", "").lower() != "development":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+            )
+        return create_sample_tokens(jwt_manager)
 
     @router.post("/login", response_model=LoginResponse)
     async def login(request: LoginRequest, response: Response) -> LoginResponse:

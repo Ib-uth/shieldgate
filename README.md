@@ -13,6 +13,19 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
 - **Health Monitoring**: Comprehensive health checks for all services
 - **Production Ready**: Docker containerization with multi-stage builds
 
+## Getting Started
+
+1. **Set CORS on Render**: Configure **`ALLOWED_ORIGINS`** on the **gateway** web service to the **admin UI** origin (the URL where the React app is hosted), not the gateway URL. Example: `https://shieldgate.onrender.com`. Use a comma-separated list if you have several origins (e.g. local dev + production).
+
+2. **Sample JWTs (development only)**: Set **`ENVIRONMENT=development`** on the gateway, then visit **`GET /auth/test-tokens`** on the gateway base URL (e.g. `https://shieldgate-gateway.onrender.com/auth/test-tokens`) to retrieve sample **admin**, **user**, and **readonly** JWTs. With **`ENVIRONMENT=production`**, this endpoint returns **404**.
+
+3. **Log in to the dashboard**: Build the admin UI with **`VITE_API_URL`** set to your gateway URL (no trailing slash). Open the admin site, sign in with any password; the demo login assigns the **admin** role if the email contains **`admin`**. You can also paste a JWT from step 2 when testing API clients directly.
+
+**Example deployed URLs**:
+
+- Gateway API: `https://shieldgate-gateway.onrender.com`
+- Admin dashboard: `https://shieldgate.onrender.com`
+
 ## 🏗️ Architecture
 
 ```
