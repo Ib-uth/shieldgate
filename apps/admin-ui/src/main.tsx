@@ -7,8 +7,11 @@ import './index.css'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchInterval: 5000, // Poll every 5 seconds
+      // Polling only where useQuery sets refetchInterval (avoid global storm + timeouts).
+      refetchInterval: false,
+      refetchOnWindowFocus: false,
       retry: 1,
+      retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 30000),
     },
   },
 })

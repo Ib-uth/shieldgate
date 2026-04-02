@@ -9,6 +9,14 @@ import {
   ThreatScoreDistribution,
 } from '../types/api';
 
+/** Stop interval refetch while the query is in error (avoids timeout/retry storms). */
+function pollUnlessError(intervalMs: number) {
+  return (
+    _data: unknown,
+    query: { state: { status: string } }
+  ): number | false => (query.state.status === 'error' ? false : intervalMs);
+}
+
 export const useHealthStatus = () => {
   return useQuery<HealthStatus>(
     'health',
@@ -17,7 +25,7 @@ export const useHealthStatus = () => {
       return response.data;
     },
     {
-      refetchInterval: 30000, // Health check every 30 seconds
+      refetchInterval: pollUnlessError(30000),
     }
   );
 };
@@ -30,7 +38,7 @@ export const useMetrics = (hours: number = 1) => {
       return response.data;
     },
     {
-      refetchInterval: 10000, // Refresh every 10 seconds
+      refetchInterval: pollUnlessError(20000),
     }
   );
 };
@@ -47,7 +55,7 @@ export const useRecentRequests = (limit: number = 50, blockedOnly: boolean = fal
       return response.data;
     },
     {
-      refetchInterval: 5000, // Refresh every 5 seconds
+      refetchInterval: pollUnlessError(15000),
     }
   );
 };
@@ -60,7 +68,7 @@ export const useBlockedIPs = (limit: number = 100) => {
       return response.data;
     },
     {
-      refetchInterval: 15000, // Refresh every 15 seconds
+      refetchInterval: pollUnlessError(20000),
     }
   );
 };
@@ -73,7 +81,7 @@ export const useAdminStats = () => {
       return response.data;
     },
     {
-      refetchInterval: 10000, // Admin stats every 10 seconds
+      refetchInterval: pollUnlessError(20000),
     }
   );
 };
@@ -86,7 +94,7 @@ export const useThreatScores = (hours: number = 24) => {
       return response.data;
     },
     {
-      refetchInterval: 30000, // Refresh every 30 seconds
+      refetchInterval: pollUnlessError(30000),
     }
   );
 };
