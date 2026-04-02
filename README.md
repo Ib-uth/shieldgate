@@ -15,7 +15,7 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
 
 ## Getting Started
 
-1. **Set CORS on Render**: Configure **`ALLOWED_ORIGINS`** on the **gateway** web service to the **admin UI** origin (the URL where the React app is hosted), not the gateway URL. Example: `https://shieldgate.onrender.com`. Use a comma-separated list if you have several origins (e.g. local dev + production).
+1. **Set CORS on Render**: Configure **`ALLOWED_ORIGINS`** on the **gateway** web service to the **admin UI** origin (the URL where the React app is hosted), not the gateway URL. Example: `https://shieldgate.onrender.com`. Use a comma-separated list if you have several origins (e.g. local dev + production). The scheme and host must match what the browser sends (no trailing slash). **Do not leave `ALLOWED_ORIGINS` empty**—an empty value makes the allowlist empty and login will fail with **400** on the OPTIONS preflight and “CORS Missing Allow Origin”. If unset, the gateway defaults to `http://localhost:3000` and `https://shieldgate.onrender.com`.
 
 2. **Admin UI build-time API URL**: Set **`VITE_API_URL`** in the **Render Static Site** (or your build environment) to the **gateway** base URL, e.g. `https://shieldgate-gateway.onrender.com` (no trailing slash). Vite inlines this at **build time**; it is not a runtime env var in the browser bundle. If you omit it, the bundled admin UI may call `http://localhost:8000` and fail in production.
 

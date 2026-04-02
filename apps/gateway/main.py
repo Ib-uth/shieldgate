@@ -184,8 +184,12 @@ app.add_middleware(
     ],
 )
 # CORS last so it is outermost: handles OPTIONS preflight before JWT / route matching.
-_allowed_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-allowed_origins = [o.strip() for o in _allowed_raw if o.strip()]
+# If ALLOWED_ORIGINS is unset or empty, browsers get 400 on preflight ("Disallowed CORS origin").
+_default_cors = "http://localhost:3000,https://shieldgate.onrender.com"
+_cors_env = os.getenv("ALLOWED_ORIGINS", _default_cors).strip()
+if not _cors_env:
+    _cors_env = _default_cors
+allowed_origins = [o.strip().rstrip("/") for o in _cors_env.split(",") if o.strip()]
 _allow_origin_regex = os.getenv("ALLOWED_ORIGIN_REGEX", "").strip() or None
 app.add_middleware(
     CORSMiddleware,
