@@ -179,9 +179,11 @@ app.add_middleware(
 # CORS last so it is outermost: handles OPTIONS preflight before JWT / route matching.
 _allowed_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 allowed_origins = [o.strip() for o in _allowed_raw if o.strip()]
+_allow_origin_regex = os.getenv("ALLOWED_ORIGIN_REGEX", "").strip() or None
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
