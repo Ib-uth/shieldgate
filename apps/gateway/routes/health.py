@@ -17,6 +17,7 @@ def create_health_routes(redis_client: redis.Redis, database_engine) -> APIRoute
     """Create health check routes"""
     router = APIRouter()
 
+    @router.get("", response_model=HealthResponse)
     @router.get("/", response_model=HealthResponse)
     async def health_check():
         """Comprehensive health check"""
@@ -62,6 +63,7 @@ def create_metrics_routes(redis_client: redis.Redis, database_engine) -> APIRout
     """Create metrics routes"""
     router = APIRouter()
 
+    @router.get("", response_model=MetricsResponse)
     @router.get("/", response_model=MetricsResponse)
     async def get_metrics(hours: int = 1, limit: int = 100):
         """Get request metrics for the last N hours"""

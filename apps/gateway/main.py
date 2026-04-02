@@ -177,7 +177,8 @@ app.add_middleware(
     public_paths=["/health", "/metrics", "/auth"],
 )
 # CORS last so it is outermost: handles OPTIONS preflight before JWT / route matching.
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+_allowed_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+allowed_origins = [o.strip() for o in _allowed_raw if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
