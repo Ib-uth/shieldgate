@@ -1,6 +1,7 @@
 """Main FastAPI application for ShieldGate API Gateway"""
 
 import os
+from pathlib import Path
 
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request
@@ -28,6 +29,27 @@ redis_client: redis.Redis | None = None
 _routes_registered = False
 
 
+def _writable_jwt_key_paths(preferred_private: str, preferred_public: str) -> tuple[str, str]:
+    """Return paths for JWT PEM files in a directory we can create/write (e.g. Render read-only app root)."""
+    keys_dir = os.getenv("JWT_KEYS_DIR")
+    if keys_dir:
+        d = Path(keys_dir).expanduser()
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d / "private.pem"), str(d / "public.pem")
+
+    parent = Path(preferred_private).expanduser().resolve().parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        probe = parent / ".shieldgate_write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return preferred_private, preferred_public
+    except OSError:
+        fallback = Path(os.environ.get("TMPDIR", "/tmp")) / "shieldgate-jwt-keys"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return str(fallback / "private.pem"), str(fallback / "public.pem")
+
+
 async def startup():
     """Initialize application services"""
     global jwt_manager, jwt_authenticator, rbac_middleware, request_proxy, redis_client
@@ -44,7 +66,7 @@ async def startup():
         print(f"Failed to connect to Redis: {e}")
         redis_client = None
 
-    # Initialize JWT manager
+    # Initialize JWT manager (use JWT_KEYS_DIR or /tmp fallback when app dir is read-only)
     private_key_path = os.getenv("JWT_PRIVATE_KEY_PATH", "./keys/private.pem")
     public_key_path = os.getenv("JWT_PUBLIC_KEY_PATH", "./keys/public.pem")
 
@@ -55,7 +77,10 @@ async def startup():
             jwt_authenticator = JWTAuthenticator(jwt_manager)
         else:
             print("Failed to load JWT keys, generating new ones...")
-            jwt_manager.generate_key_pair(private_key_path, public_key_path)
+            wpriv, wpub = _writable_jwt_key_paths(private_key_path, public_key_path)
+            if (wpriv, wpub) != (private_key_path, public_key_path):
+                jwt_manager = JWTManager(wpriv, wpub)
+            jwt_manager.generate_key_pair(wpriv, wpub)
             if jwt_manager.load_keys():
                 jwt_authenticator = JWTAuthenticator(jwt_manager)
             else:
@@ -161,22 +186,23 @@ app.add_middleware(
 # Add routes
 def setup_routes():
     """Setup application routes"""
-    if not request_proxy:
-        raise RuntimeError("Request proxy not initialized")
-
-    # Health and metrics routes
+    # Health and metrics always (needed for load balancers / degraded startup)
     health_router = create_health_routes(redis_client, engine)
     metrics_router = create_metrics_routes(redis_client, engine)
     app.include_router(health_router, prefix="/health", tags=["health"])
     app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 
-    # Admin routes
     admin_router = create_admin_routes(rbac_middleware, engine)
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
-    # Proxy routes (explicit /proxy prefix only — a root catch-all would shadow /health, /admin, etc.)
-    proxy_handler, _catch_all = create_proxy_routes(request_proxy)
+    if not request_proxy:
+        print(
+            "Warning: Request proxy not initialized — /proxy/* routes are not registered "
+            "(set JWT keys and DOWNSTREAM_URL for full gateway)"
+        )
+        return
 
+    proxy_handler, _catch_all = create_proxy_routes(request_proxy)
     app.add_route(
         "/proxy/{path:path}",
         proxy_handler,
