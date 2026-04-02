@@ -12,7 +12,10 @@ Example:
   export ACCESS_TOKEN=eyJ...
   python scripts/flood_gateway_requests.py --count 50
 
-Optional: --path /proxy/ping (needs working DOWNSTREAM_URL); default is GET / (requires Bearer).
+Optional:
+  --path /proxy/ping  (needs working DOWNSTREAM_URL)
+  --x-forwarded-for "203.0.113.1,203.0.113.2"  rotate per request (dev only; see README)
+  --sleep-ms 0        set 0 with high --count to trigger IP rate limits (429)
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -47,6 +51,17 @@ def main() -> int:
         default="",
         help="Override ACCESS_TOKEN env (prefer env to avoid shell history)",
     )
+    parser.add_argument(
+        "--x-forwarded-for",
+        default="",
+        help="Comma-separated IPs to rotate on each request (spoofed client IP in logs if gateway trusts header)",
+    )
+    parser.add_argument(
+        "--sleep-ms",
+        type=int,
+        default=0,
+        help="Delay between requests in ms (default: 0)",
+    )
     args = parser.parse_args()
 
     base = (args.gateway_url or os.environ.get("GATEWAY_URL", "")).rstrip("/")
@@ -66,13 +81,17 @@ def main() -> int:
     path = args.path if args.path.startswith("/") else f"/{args.path}"
     url = f"{base}{path}"
 
+    forwarded_ips: list[str] = []
+    if args.x_forwarded_for.strip():
+        forwarded_ips = [x.strip() for x in args.x_forwarded_for.split(",") if x.strip()]
+
     ok = 0
     for i in range(args.count):
-        req = urllib.request.Request(
-            url,
-            headers={"Authorization": f"Bearer {token}"},
-            method="GET",
-        )
+        headers: dict[str, str] = {"Authorization": f"Bearer {token}"}
+        if forwarded_ips:
+            headers["X-Forwarded-For"] = forwarded_ips[i % len(forwarded_ips)]
+
+        req = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 code = resp.getcode()
@@ -80,9 +99,15 @@ def main() -> int:
                     ok += 1
                 print(f"{i + 1}/{args.count} {url} -> {code}")
         except urllib.error.HTTPError as e:
-            print(f"{i + 1}/{args.count} {url} -> HTTP {e.code}: {e.reason}", file=sys.stderr)
+            print(
+                f"{i + 1}/{args.count} {url} -> HTTP {e.code}: {e.reason}",
+                file=sys.stderr,
+            )
         except urllib.error.URLError as e:
             print(f"{i + 1}/{args.count} {url} -> error: {e.reason}", file=sys.stderr)
+
+        if args.sleep_ms > 0:
+            time.sleep(args.sleep_ms / 1000.0)
 
     print(f"done: {ok}/{args.count} requests returned 2xx")
     return 0 if ok == args.count else 2

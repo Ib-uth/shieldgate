@@ -43,7 +43,9 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
 
 - **SPA routing**: Direct navigation or a full refresh on client routes such as `/login` only works if the static host serves `index.html` for paths that are not real files. The admin UI ships [`apps/admin-ui/public/_redirects`](apps/admin-ui/public/_redirects) (Netlify-style: `/*` → `/index.html` with status 200). If your provider ignores that file, configure an equivalent **rewrite** in its dashboard (for example on Render Static Sites: rewrite `/*` to `/index.html` with HTTP 200).
 
-- **`DOWNSTREAM_URL` and system health**: The gateway checks downstream availability with **`GET {DOWNSTREAM_URL}/health`**. That endpoint must return **200**; otherwise the admin **System Health** panel reports downstream failure (for example “Downstream returned 404”) and overall status may show as **degraded**, even when Redis and the database are fine.
+- **`DOWNSTREAM_URL` and system health**: The gateway checks downstream availability with **`GET {DOWNSTREAM_URL}/health`**. That endpoint must return **200**; otherwise the admin **System Health** panel reports downstream failure (for example “Downstream returned 404”) and overall status may show as **degraded**, even when Redis and the database are fine. To clear that without a real backend, deploy the tiny mock in [`services/downstream-mock`](services/downstream-mock) (FastAPI `GET /health` only), set **`DOWNSTREAM_URL`** on the gateway to that service’s public URL (no path), and redeploy the gateway.
+
+- **Admin session (401 on `/admin/stats`)**: Access tokens expire after **15 minutes**. The admin UI uses **`withCredentials`** and **`POST /auth/refresh`** (httpOnly refresh cookie) plus a periodic refresh so dashboard polling does not hit **401 Invalid or expired token** after idle time.
 
 7. **Dashboard metrics and test traffic**: Metrics and “Recent requests” come from **`request_logs`** in PostgreSQL. The gateway writes a row per request via **`StructuredLoggingMiddleware`** when **`DATABASE_URL`** is set. The static admin URL (e.g. `https://shieldgate.onrender.com/login`) is only the React app; it does **not** return a JSON token. Obtain a JWT from the **gateway**: **`POST https://<gateway-host>/auth/login`** with `{"email","password"}`, then send authenticated traffic to the gateway (for example **`GET /`** with `Authorization: Bearer <access_token>`). To generate many sample requests locally or against a deployment:
 
@@ -53,7 +55,7 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
    python scripts/flood_gateway_requests.py --count 50
    ```
 
-   Use `--path /proxy/ping` only if **`DOWNSTREAM_URL`** is reachable; otherwise the default **`/`** is enough to populate metrics. Do not commit real tokens.
+   Use `--path /proxy/ping` only if **`DOWNSTREAM_URL`** is reachable; otherwise the default **`/`** is enough to populate metrics. **`--x-forwarded-for "IP1,IP2,..."`** rotates spoofed client IPs in **`X-Forwarded-For`** (useful when the gateway sees that header first—often local or custom proxies; many hosts overwrite it). **`--sleep-ms 0`** with a large **`--count`** can trigger **429** rate limits (logged as errors / blocked-style rows). Getting **403** threat blocks from a script usually requires patterns that score above your **`THREAT_SCORE_BLOCK_THRESHOLD`**. Do not commit real tokens.
 
 ## 🏗️ Architecture
 

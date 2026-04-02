@@ -7,12 +7,19 @@ import React, {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import apiClient from '../api/client';
-import { setAccessTokenGetter, setUnauthorizedHandler } from '../api/tokenAccessor';
+import { refreshClient } from '../api/client';
+import {
+  setAccessTokenGetter,
+  setAccessTokenUpdater,
+  setUnauthorizedHandler,
+} from '../api/tokenAccessor';
 
 import { AuthContext, type AuthContextValue } from './auth-context';
 
 const ACCESS_TOKEN_KEY = 'shieldgate_access_token';
+
+/** Access tokens expire in 15m; refresh before expiry so polling does not 401. */
+const PROACTIVE_REFRESH_MS = 10 * 60 * 1000;
 
 function readStoredToken(): string | null {
   try {
@@ -33,6 +40,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token]);
 
   useEffect(() => {
+    setAccessTokenUpdater((access: string) => {
+      try {
+        sessionStorage.setItem(ACCESS_TOKEN_KEY, access);
+      } catch {
+        /* ignore */
+      }
+      setToken(access);
+    });
+    return () => setAccessTokenUpdater(() => {});
+  }, []);
+
+  useEffect(() => {
     setUnauthorizedHandler(() => {
       try {
         sessionStorage.removeItem(ACCESS_TOKEN_KEY);
@@ -45,8 +64,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, [navigate]);
 
+  useEffect(() => {
+    if (!token) return undefined;
+
+    const id = window.setInterval(async () => {
+      try {
+        const { data } = await refreshClient.post<{ access_token: string }>(
+          '/auth/refresh',
+          {}
+        );
+        try {
+          sessionStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
+        } catch {
+          /* ignore */
+        }
+        setToken(data.access_token);
+      } catch {
+        /* next API call will 401-intercept or fail; avoid logout loop here */
+      }
+    }, PROACTIVE_REFRESH_MS);
+
+    return () => window.clearInterval(id);
+  }, [token]);
+
   const login = useCallback(async (email: string, password: string) => {
-    const res = await apiClient.post<{ access_token: string }>('/auth/login', {
+    const res = await refreshClient.post<{ access_token: string }>('/auth/login', {
       email,
       password,
     });
