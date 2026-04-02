@@ -1,6 +1,7 @@
 """Main FastAPI application for ShieldGate API Gateway"""
 
 import os
+import tempfile
 from pathlib import Path
 
 import redis.asyncio as redis
@@ -29,7 +30,9 @@ redis_client: redis.Redis | None = None
 _routes_registered = False
 
 
-def _writable_jwt_key_paths(preferred_private: str, preferred_public: str) -> tuple[str, str]:
+def _writable_jwt_key_paths(
+    preferred_private: str, preferred_public: str
+) -> tuple[str, str]:
     """Return paths for JWT PEM files in a directory we can create/write (e.g. Render read-only app root)."""
     keys_dir = os.getenv("JWT_KEYS_DIR")
     if keys_dir:
@@ -45,7 +48,8 @@ def _writable_jwt_key_paths(preferred_private: str, preferred_public: str) -> tu
         probe.unlink()
         return preferred_private, preferred_public
     except OSError:
-        fallback = Path(os.environ.get("TMPDIR", "/tmp")) / "shieldgate-jwt-keys"
+        tmp_root = os.environ.get("TMPDIR") or tempfile.gettempdir()
+        fallback = Path(tmp_root) / "shieldgate-jwt-keys"
         fallback.mkdir(parents=True, exist_ok=True)
         return str(fallback / "private.pem"), str(fallback / "public.pem")
 
