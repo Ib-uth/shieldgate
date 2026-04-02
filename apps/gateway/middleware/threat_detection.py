@@ -46,6 +46,8 @@ class ThreatDetectionMiddleware(BaseHTTPMiddleware):
             self.model = None
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        if request.method == "OPTIONS":
+            return await call_next(request)
         # Skip threat detection for health and metrics (including router prefixes)
         path = request.url.path
         if path == "/health" or path.startswith("/health/"):

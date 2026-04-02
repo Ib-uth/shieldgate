@@ -17,9 +17,11 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
 
 1. **Set CORS on Render**: Configure **`ALLOWED_ORIGINS`** on the **gateway** web service to the **admin UI** origin (the URL where the React app is hosted), not the gateway URL. Example: `https://shieldgate.onrender.com`. Use a comma-separated list if you have several origins (e.g. local dev + production).
 
-2. **Sample JWTs (development only)**: Set **`ENVIRONMENT=development`** on the gateway, then visit **`GET /auth/test-tokens`** on the gateway base URL (e.g. `https://shieldgate-gateway.onrender.com/auth/test-tokens`) to retrieve sample **admin**, **user**, and **readonly** JWTs. With **`ENVIRONMENT=production`**, this endpoint returns **404**.
+2. **Admin UI build-time API URL**: Set **`VITE_API_URL`** in the **Render Static Site** (or your build environment) to the **gateway** base URL, e.g. `https://shieldgate-gateway.onrender.com` (no trailing slash). Vite inlines this at **build time**; it is not a runtime env var in the browser bundle. If you omit it, the bundled admin UI may call `http://localhost:8000` and fail in production.
 
-3. **Log in to the dashboard**: Build the admin UI with **`VITE_API_URL`** set to your gateway URL (no trailing slash). Open the admin site, sign in with any password; the demo login assigns the **admin** role if the email contains **`admin`**. You can also paste a JWT from step 2 when testing API clients directly.
+3. **Sample JWTs (development only)**: Set **`ENVIRONMENT=development`** on the gateway, then visit **`GET /auth/test-tokens`** on the gateway base URL (e.g. `https://shieldgate-gateway.onrender.com/auth/test-tokens`) to retrieve sample **admin**, **user**, and **readonly** JWTs. With **`ENVIRONMENT=production`**, this endpoint returns **404**.
+
+4. **Log in to the dashboard**: Build the admin UI with **`VITE_API_URL`** pointing at the gateway. Open the admin site and sign in with your credentials. You can also use a JWT from step 3 when testing API clients directly.
 
 **Example deployed URLs**:
 

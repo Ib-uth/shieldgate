@@ -177,9 +177,10 @@ app.add_middleware(
     public_paths=[
         "/health",
         "/metrics",
-        "/auth",
         "/auth/login",
         "/auth/refresh",
+        "/auth/logout",
+        "/auth/test-tokens",
     ],
 )
 # CORS last so it is outermost: handles OPTIONS preflight before JWT / route matching.

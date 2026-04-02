@@ -152,6 +152,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return self._redis_client
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        if request.method == "OPTIONS":
+            return await call_next(request)
         # Skip rate limiting for health/metrics (exact or subpaths)
         path = request.url.path
         if (

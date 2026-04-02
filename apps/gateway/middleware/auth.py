@@ -45,12 +45,13 @@ class JWTMiddleware(BaseHTTPMiddleware):
         self.security = HTTPBearer(auto_error=False)
 
     async def dispatch(self, request: Request, call_next: Callable):
+        # Let CORS preflight through without JWT (defense in depth; CORS is outermost).
+        if request.method == "OPTIONS":
+            return await call_next(request)
         path = request.url.path
         if path in self.public_paths:
             return await call_next(request)
         if path.startswith("/health/") or path.startswith("/metrics/"):
-            return await call_next(request)
-        if path == "/auth" or path.startswith("/auth/"):
             return await call_next(request)
         if path == "/proxy/public" or path.startswith("/proxy/public/"):
             return await call_next(request)

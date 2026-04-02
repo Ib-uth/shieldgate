@@ -16,6 +16,19 @@ function formatLoginError(err: unknown): string {
   return 'Login failed';
 }
 
+function ShieldIcon() {
+  return (
+    <svg
+      className="h-8 w-8 shrink-0 text-white"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M12 2 4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm0 17.5c-3.31-.82-6-4.24-6-8.41V6.39l6-2.25 6 2.25v4.7c0 4.17-2.69 7.59-6 8.41z" />
+    </svg>
+  );
+}
+
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -47,18 +60,21 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
       <header className="bg-slate-900 text-white py-4 px-6 shadow-md">
-        <div className="max-w-md mx-auto flex items-center gap-2">
-          <span className="text-xl font-semibold tracking-tight">ShieldGate</span>
-          <span className="text-slate-400 text-sm">Admin</span>
+        <div className="max-w-md mx-auto flex items-center gap-3">
+          <ShieldIcon />
+          <div>
+            <span className="text-xl font-semibold tracking-tight">ShieldGate</span>
+            <span className="text-slate-400 text-sm ml-2">Admin</span>
+          </div>
         </div>
       </header>
 
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden">
+      <div className="flex-1 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-lg shadow-lg border border-slate-200 border-l-4 border-l-blue-600 overflow-hidden">
           <div className="bg-slate-900 px-6 py-4">
             <h1 className="text-lg font-semibold text-white">Sign in</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Use an email containing &quot;admin&quot; for admin access (demo mode).
+              Enter your credentials to access the admin panel
             </p>
           </div>
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -109,6 +125,9 @@ export function LoginPage() {
             </button>
           </form>
         </div>
+        <p className="mt-6 text-center text-xs text-slate-500">
+          ShieldGate API Gateway — Admin Console
+        </p>
       </div>
     </div>
   );

@@ -6,12 +6,18 @@ from datetime import timedelta
 from typing import Any
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from ..middleware.rbac import require_role
 from ..utils.jwt_utils import JWTManager, create_sample_tokens
+
+_COOKIE_KWARGS = {
+    "max_age": 7 * 24 * 60 * 60,
+    "httponly": True,
+    "secure": True,
+    "samesite": "none",
+}
 
 
 # Schemas
@@ -39,6 +45,13 @@ class TokenResponse(BaseModel):
 # Security scheme for refresh token
 refresh_scheme = HTTPBearer(auto_error=False)
 
+# Production dashboard: only this email may sign in (password is not verified).
+_PRODUCTION_ALLOWED_EMAIL = "uthibraheem@gmail.com"
+
+
+def _is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "").lower() == "production"
+
 
 def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> APIRouter:
     """Create authentication routes"""
@@ -62,43 +75,54 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         Authenticate user and return tokens.
 
         In a real implementation, this would validate credentials against a database.
-        For demo purposes, we'll create tokens based on email domain.
+        Production accepts only the configured owner email; development uses demo rules.
         """
 
-        # Simple demo authentication based on email
-        if "admin" in request.email:
+        email_for_claims = request.email.strip()
+        if _is_production():
+            if email_for_claims.lower() != _PRODUCTION_ALLOWED_EMAIL.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid credentials",
+                )
             role = "admin"
-            user_id = "admin-123"
-        elif "user" in request.email:
-            role = "user"
-            user_id = "user-456"
+            user_id = "admin-owner"
+            email_for_claims = _PRODUCTION_ALLOWED_EMAIL
         else:
-            role = "readonly"
-            user_id = "readonly-789"
+            # Development / non-production: demo authentication based on email
+            if "admin" in request.email:
+                role = "admin"
+                user_id = "admin-123"
+            elif "user" in request.email:
+                role = "user"
+                user_id = "user-456"
+            else:
+                role = "readonly"
+                user_id = "readonly-789"
 
         # Create access token (15 minutes)
         access_token = jwt_manager.create_token(
-            {"sub": user_id, "email": request.email, "role": role}, expires_in=15 * 60
+            {"sub": user_id, "email": email_for_claims, "role": role}, expires_in=15 * 60
         )  # 15 minutes
 
         # Create refresh token (7 days)
         refresh_token = secrets.token_urlsafe(32)
         refresh_jti = f"refresh_{refresh_token}"
 
+        claims_blob = f"{user_id}|{email_for_claims}|{role}"
+
         # Store refresh token in Redis with expiry
         await redis_client.setex(
             f"refresh_token:{refresh_token}", timedelta(days=7), refresh_jti
         )
-
-        # Set refresh token in httpOnly cookie
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            max_age=7 * 24 * 60 * 60,  # 7 days
-            httponly=True,
-            secure=False,  # Set to True in production with HTTPS
-            samesite="lax",
+        await redis_client.setex(
+            f"refresh_token_claims:{refresh_token}",
+            timedelta(days=7),
+            claims_blob,
         )
+
+        # Set refresh token in httpOnly cookie (cross-site admin UI + HTTPS gateway)
+        response.set_cookie(key="refresh_token", value=refresh_token, **_COOKIE_KWARGS)
 
         return LoginResponse(
             access_token=access_token, expires_in=15 * 60, token_type="bearer"
@@ -106,7 +130,8 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
 
     @router.post("/refresh", response_model=TokenResponse)
     async def refresh_access_token(
-        request: RefreshRequest,
+        http_request: Request,
+        body: RefreshRequest,
         response: Response,
         credentials: HTTPAuthorizationCredentials | None = Depends(refresh_scheme),
     ) -> TokenResponse:
@@ -114,14 +139,11 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         Refresh access token using refresh token.
         """
 
-        # Get refresh token from cookie or request body
-        refresh_token = None
-
-        if request.refresh_token:
-            refresh_token = request.refresh_token
-        elif credentials and credentials.credentials:
-            # Try to get from Authorization header (for testing)
+        refresh_token: str | None = body.refresh_token
+        if not refresh_token and credentials and credentials.credentials:
             refresh_token = credentials.credentials
+        if not refresh_token:
+            refresh_token = http_request.cookies.get("refresh_token")
 
         if not refresh_token:
             raise HTTPException(
@@ -147,11 +169,20 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
                 detail="Refresh token has been revoked",
             )
 
-        # Get user info from refresh token (in real implementation, this would come from database)
-        # For demo, extract role from token pattern
-        user_id = f"refresh-user-{refresh_token[:8]}"
-        email = f"refresh-{refresh_token[:8]}@example.com"
-        role = "user"  # Default role for refresh
+        claims_raw = await redis_client.get(f"refresh_token_claims:{refresh_token}")
+        if not claims_raw:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired, please log in again",
+            )
+
+        parts = claims_raw.split("|", 2)
+        if len(parts) != 3:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired, please log in again",
+            )
+        user_id, email, role = parts[0], parts[1], parts[2]
 
         # Create new access token
         new_access_token = jwt_manager.create_token(
@@ -165,20 +196,20 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         # Revoke old refresh token
         await redis_client.sadd("refresh_token:revoked", refresh_jti)  # type: ignore[misc]
         await redis_client.delete(f"refresh_token:{refresh_token}")  # type: ignore[misc]
+        await redis_client.delete(f"refresh_token_claims:{refresh_token}")  # type: ignore[misc]
 
-        # Store new refresh token
+        # Store new refresh token and claims
         await redis_client.setex(
             f"refresh_token:{new_refresh_token}", timedelta(days=7), new_refresh_jti
         )
+        await redis_client.setex(
+            f"refresh_token_claims:{new_refresh_token}",
+            timedelta(days=7),
+            claims_raw,
+        )
 
-        # Set new refresh token cookie
         response.set_cookie(
-            key="refresh_token",
-            value=new_refresh_token,
-            max_age=7 * 24 * 60 * 60,  # 7 days
-            httponly=True,
-            secure=False,  # Set to True in production with HTTPS
-            samesite="lax",
+            key="refresh_token", value=new_refresh_token, **_COOKIE_KWARGS
         )
 
         return TokenResponse(
@@ -187,6 +218,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
 
     @router.post("/logout")
     async def logout(
+        http_request: Request,
         response: Response,
         credentials: HTTPAuthorizationCredentials | None = Depends(refresh_scheme),
     ) -> dict[str, Any]:
@@ -194,45 +226,45 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         Logout user by revoking refresh token.
         """
 
-        # Try to get refresh token from Authorization header (for testing)
-        refresh_token = None
+        refresh_token: str | None = None
 
         if credentials and credentials.credentials:
-            # Check if it's a refresh token (starts with 'refresh_')
             if credentials.credentials.startswith("refresh_"):
-                # Extract actual token from JTI
-                refresh_token = credentials.credentials[8:]  # Remove 'refresh_' prefix
+                refresh_token = credentials.credentials[8:]
 
-        # Also try to get from cookie (normal flow)
         if not refresh_token:
-            # In a real implementation, you'd get this from the request cookies
-            # For now, we'll skip this as it requires request object access
-            pass
+            refresh_token = http_request.cookies.get("refresh_token")
 
         if refresh_token:
-            # Revoke the refresh token
             refresh_jti = f"refresh_{refresh_token}"
             await redis_client.sadd("refresh_token:revoked", refresh_jti)  # type: ignore[misc]
             await redis_client.delete(f"refresh_token:{refresh_token}")  # type: ignore[misc]
+            await redis_client.delete(f"refresh_token_claims:{refresh_token}")  # type: ignore[misc]
 
-        # Clear refresh token cookie
-        response.delete_cookie("refresh_token")
+        response.delete_cookie(
+            "refresh_token",
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="none",
+        )
 
         return {"message": "Successfully logged out"}
 
     @router.get("/me")
-    @require_role("readonly")
-    async def get_current_user(
-        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
-    ) -> dict[str, Any]:
+    async def get_current_user(request: Request) -> dict[str, Any]:
         """
-        Get current user information from access token.
+        Get current user information from access token (JWT middleware).
         """
-        # This would normally validate the token and return user info
-        # For now, return a placeholder
+        user = getattr(request.state, "user", None)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+            )
         return {
-            "message": "This endpoint would return current user information",
-            "token": credentials.credentials,
+            "sub": user.sub,
+            "email": user.email,
+            "role": user.role,
         }
 
     return router
