@@ -5,11 +5,15 @@ import secrets
 from datetime import timedelta
 from typing import Any
 
+import bcrypt
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.engine import Engine
 
+from ..models.database import SessionLocal, User
 from ..utils.jwt_utils import JWTManager, create_sample_tokens
 
 _REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60
@@ -60,8 +64,25 @@ def _is_production() -> bool:
     return os.getenv("ENVIRONMENT", "").lower() == "production"
 
 
-def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> APIRouter:
-    """Create authentication routes"""
+def _require_redis(rc: redis.Redis | None) -> redis.Redis:
+    if rc is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Authentication storage is unavailable. Set REDIS_URL on the gateway "
+                "(e.g. Render Redis or Upstash) so login and refresh tokens work."
+            ),
+        )
+    return rc
+
+
+def create_auth_routes(
+    jwt_manager: JWTManager,
+    redis_client: redis.Redis | None,
+    *,
+    engine: Engine | None = None,
+) -> APIRouter:
+    """Create authentication routes (Redis for sessions; optional DB for users)."""
     router = APIRouter(prefix="/auth", tags=["authentication"])
 
     @router.get("/test-tokens")
@@ -81,12 +102,41 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         """
         Authenticate user and return tokens.
 
-        In a real implementation, this would validate credentials against a database.
-        Production accepts only the configured owner email; development uses demo rules.
+        If ``DATABASE_URL`` is set and a matching row exists in ``users``, email/password
+        are verified with bcrypt (Neon/PostgreSQL). Otherwise legacy rules apply (production
+        allowlist or dev demo heuristics).
         """
 
         email_for_claims = request.email.strip()
-        if _is_production():
+        password = request.password
+
+        if engine is not None and SessionLocal is not None:
+            db = SessionLocal()
+            try:
+                user = (
+                    db.query(User)
+                    .filter(func.lower(User.email) == email_for_claims.lower())
+                    .first()
+                )
+                if user is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid credentials",
+                    )
+                if not bcrypt.checkpw(
+                    password.encode("utf-8"),
+                    user.password_hash.encode("utf-8"),
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid credentials",
+                    )
+                user_id = str(user.id)
+                email_for_claims = user.email
+                role = user.role
+            finally:
+                db.close()
+        elif _is_production():
             if email_for_claims.lower() != _PRODUCTION_ALLOWED_EMAIL.lower():
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -96,7 +146,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
             user_id = "admin-owner"
             email_for_claims = _PRODUCTION_ALLOWED_EMAIL
         else:
-            # Development / non-production: demo authentication based on email
+            # Development / non-production without database: demo authentication
             if "admin" in request.email:
                 role = "admin"
                 user_id = "admin-123"
@@ -119,11 +169,10 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
 
         claims_blob = f"{user_id}|{email_for_claims}|{role}"
 
+        r = _require_redis(redis_client)
         # Store refresh token in Redis with expiry
-        await redis_client.setex(
-            f"refresh_token:{refresh_token}", timedelta(days=7), refresh_jti
-        )
-        await redis_client.setex(
+        await r.setex(f"refresh_token:{refresh_token}", timedelta(days=7), refresh_jti)
+        await r.setex(
             f"refresh_token_claims:{refresh_token}",
             timedelta(days=7),
             claims_blob,
@@ -159,8 +208,9 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
                 detail="Refresh token required",
             )
 
+        r = _require_redis(redis_client)
         # Check if refresh token exists and is not revoked
-        refresh_jti = await redis_client.get(f"refresh_token:{refresh_token}")
+        refresh_jti = await r.get(f"refresh_token:{refresh_token}")
         if not refresh_jti:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -168,7 +218,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
             )
 
         # Check if refresh token is revoked
-        is_revoked = await redis_client.sismember(  # type: ignore[misc]
+        is_revoked = await r.sismember(  # type: ignore[misc]
             "refresh_token:revoked", refresh_jti
         )
         if is_revoked:
@@ -177,7 +227,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
                 detail="Refresh token has been revoked",
             )
 
-        claims_raw = await redis_client.get(f"refresh_token_claims:{refresh_token}")
+        claims_raw = await r.get(f"refresh_token_claims:{refresh_token}")
         if not claims_raw:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -202,15 +252,15 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         new_refresh_jti = f"refresh_{new_refresh_token}"
 
         # Revoke old refresh token
-        await redis_client.sadd("refresh_token:revoked", refresh_jti)  # type: ignore[misc]
-        await redis_client.delete(f"refresh_token:{refresh_token}")  # type: ignore[misc]
-        await redis_client.delete(f"refresh_token_claims:{refresh_token}")  # type: ignore[misc]
+        await r.sadd("refresh_token:revoked", refresh_jti)  # type: ignore[misc]
+        await r.delete(f"refresh_token:{refresh_token}")  # type: ignore[misc]
+        await r.delete(f"refresh_token_claims:{refresh_token}")  # type: ignore[misc]
 
         # Store new refresh token and claims
-        await redis_client.setex(
+        await r.setex(
             f"refresh_token:{new_refresh_token}", timedelta(days=7), new_refresh_jti
         )
-        await redis_client.setex(
+        await r.setex(
             f"refresh_token_claims:{new_refresh_token}",
             timedelta(days=7),
             claims_raw,
@@ -241,7 +291,7 @@ def create_auth_routes(jwt_manager: JWTManager, redis_client: redis.Redis) -> AP
         if not refresh_token:
             refresh_token = http_request.cookies.get("refresh_token")
 
-        if refresh_token:
+        if refresh_token and redis_client is not None:
             refresh_jti = f"refresh_{refresh_token}"
             await redis_client.sadd("refresh_token:revoked", refresh_jti)  # type: ignore[misc]
             await redis_client.delete(f"refresh_token:{refresh_token}")  # type: ignore[misc]

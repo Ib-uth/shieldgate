@@ -67,6 +67,20 @@ class RequestLog(Base):
     )
 
 
+class User(Base):
+    """Admin / dashboard users (stored in PostgreSQL e.g. Neon)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="admin")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class BlockedIP(Base):
     """Blocked IPs table for persistent blocking"""
 

@@ -17,11 +17,22 @@ A production-ready API gateway with JWT authentication, rate limiting, structure
 
 1. **Set CORS on Render**: Configure **`ALLOWED_ORIGINS`** on the **gateway** web service to the **admin UI** origin (the URL where the React app is hosted), not the gateway URL. Example: `https://shieldgate.onrender.com`. Use a comma-separated list if you have several origins (e.g. local dev + production). The scheme and host must match what the browser sends (no trailing slash). **Do not leave `ALLOWED_ORIGINS` empty**—an empty value makes the allowlist empty and login will fail with **400** on the OPTIONS preflight and “CORS Missing Allow Origin”. If unset, the gateway defaults to `http://localhost:3000` and `https://shieldgate.onrender.com`.
 
-2. **Admin UI build-time API URL**: Set **`VITE_API_URL`** in the **Render Static Site** (or your build environment) to the **gateway** base URL, e.g. `https://shieldgate-gateway.onrender.com` (no trailing slash). Vite inlines this at **build time**; it is not a runtime env var in the browser bundle. If you omit it, the bundled admin UI may call `http://localhost:8000` and fail in production.
+2. **Redis (`REDIS_URL`) — required for dashboard login**: The gateway stores refresh tokens and rate-limit state in **Redis**. On Render, add a **Redis** instance and set **`REDIS_URL`** on the **gateway** web service. If Redis is not connected, **`POST /auth/login`** returns **503** (auth routes still exist; previously some setups returned **404** when routes were not registered).
 
-3. **Sample JWTs (development only)**: Set **`ENVIRONMENT=development`** on the gateway, then visit **`GET /auth/test-tokens`** on the gateway base URL (e.g. `https://shieldgate-gateway.onrender.com/auth/test-tokens`) to retrieve sample **admin**, **user**, and **readonly** JWTs. With **`ENVIRONMENT=production`**, this endpoint returns **404**.
+3. **Neon / PostgreSQL users (`DATABASE_URL`)**: When **`DATABASE_URL`** is set, login checks the **`users`** table (email + bcrypt password). Create your account once (locally or in CI) with:
 
-4. **Log in to the dashboard**: Build the admin UI with **`VITE_API_URL`** pointing at the gateway. Open the admin site and sign in with your credentials. You can also use a JWT from step 3 when testing API clients directly.
+   ```bash
+   DATABASE_URL='postgresql://...' .venv/bin/python scripts/seed_admin_user.py \
+     --email you@example.com --password 'your-secret' --role admin
+   ```
+
+   If **`DATABASE_URL`** is not set, production falls back to the single allowlisted email in code; development uses demo email heuristics without a password check.
+
+4. **Admin UI build-time API URL**: Set **`VITE_API_URL`** in the **Render Static Site** (or your build environment) to the **gateway** base URL, e.g. `https://shieldgate-gateway.onrender.com` (no trailing slash). Vite inlines this at **build time**; it is not a runtime env var in the browser bundle. If you omit it, the bundled admin UI may call `http://localhost:8000` and fail in production.
+
+5. **Sample JWTs (development only)**: Set **`ENVIRONMENT=development`** on the gateway, then visit **`GET /auth/test-tokens`** on the gateway base URL (e.g. `https://shieldgate-gateway.onrender.com/auth/test-tokens`) to retrieve sample **admin**, **user**, and **readonly** JWTs. With **`ENVIRONMENT=production`**, this endpoint returns **404**.
+
+6. **Log in to the dashboard**: Build the admin UI with **`VITE_API_URL`** pointing at the gateway. If you use Neon users (step 3), sign in with that email and password. Otherwise see the production allowlist in `apps/gateway/routes/auth.py`. You can also use a JWT from step 5 when testing API clients directly.
 
 **Example deployed URLs**:
 

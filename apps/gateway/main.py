@@ -234,9 +234,12 @@ async def on_startup():
     await startup()
     if _routes_registered:
         return
-    if jwt_manager and redis_client:
+    # Auth routes need JWT; login/refresh need Redis for refresh tokens. If Redis is
+    # missing, routes still register so clients get 503 + message instead of 404.
+    if jwt_manager:
         app.include_router(
-            create_auth_routes(jwt_manager, redis_client), tags=["authentication"]
+            create_auth_routes(jwt_manager, redis_client, engine=engine),
+            tags=["authentication"],
         )
     setup_routes()
     _routes_registered = True
